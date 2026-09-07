@@ -60,6 +60,8 @@ export const loginuser = async(req,res) => {
         (
             {
              id: existinguser.id,
+             role: existinguser.role,
+             businessId: existinguser.businessId,
             },
             process.env.ACCESS_TOKEN_SECRET,
             {
