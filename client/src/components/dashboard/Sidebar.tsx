@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   BarChart3
 } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const navItems =[
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -28,6 +29,7 @@ const navItems =[
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { hasPermission } = usePermissions();
   const [user, setUser] = useState<{ name?: string; email?: string; role?: string } | null>(null);
 
   useEffect(() => {
@@ -84,6 +86,10 @@ export default function Sidebar() {
       {/* 🟢 Navigation Links */}
       <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
         {navItems.map((item) => {
+          if (item.name === "Reports" && !hasPermission("read:reports")) {
+            return null;
+          }
+
           const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
           

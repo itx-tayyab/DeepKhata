@@ -62,7 +62,10 @@ export default function InviteStaffModal({ isOpen, onClose, onInviteSuccess, bus
     try {
       const res = await fetch("http://localhost:5000/team/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("accessToken")}`,
+        },
         body: JSON.stringify({ 
           email, 
           role, 

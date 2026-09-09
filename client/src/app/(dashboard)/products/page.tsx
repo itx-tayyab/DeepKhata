@@ -7,6 +7,7 @@ import {
   Filter, Plus, Trash2, FolderTree, Tag, Barcode
 } from "lucide-react";
 import AddProductModal from "@/components/modals/AddProductModal"; // 🟢 IMPORT MODAL
+import { usePermissions } from "@/hooks/usePermissions";
 
 type StockFilter = "all" | "low" | "out";
 
@@ -66,6 +67,7 @@ export default function ProductsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { hasPermission } = usePermissions();
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "");
   const [activeCategory, setActiveCategory] = useState(searchParams.get("category") || "All");
@@ -230,12 +232,14 @@ export default function ProductsPage() {
           <p className="text-sm text-slate-500 mt-1">Manage catalog, categories, and track inventory value.</p>
         </div>
         
-        <button 
-          onClick={() => setIsAddModalOpen(true)}
-          className="flex items-center justify-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200"
-        >
-          <Plus className="w-4 h-4" /> Add Product
-        </button>
+        {hasPermission("write:products") && (
+          <button 
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200"
+          >
+            <Plus className="w-4 h-4" /> Add Product
+          </button>
+        )}
       </div>
 
       {/* 🟢 2. DYNAMIC METRICS CARDS */}
@@ -282,12 +286,14 @@ export default function ProductsPage() {
               {category}
             </button>
           ))}
-          <button 
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 border border-dashed border-blue-200 whitespace-nowrap transition-colors flex items-center gap-1 ml-auto"
-          >
-            <Plus className="w-3.5 h-3.5" /> New Category
-          </button>
+          {hasPermission("write:products") && (
+            <button 
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 border border-dashed border-blue-200 whitespace-nowrap transition-colors flex items-center gap-1 ml-auto"
+            >
+              <Plus className="w-3.5 h-3.5" /> New Category
+            </button>
+          )}
         </div>
 
         {/* Search */}
@@ -398,12 +404,14 @@ export default function ProductsPage() {
                   </td>
 
                   <td className="px-6 py-4 text-right">
-                    <button 
-                      onClick={() => deleteProduct(product.id)}
-                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4.5 h-4.5" />
-                    </button>
+                    {hasPermission("delete:products") && (
+                      <button 
+                        onClick={() => deleteProduct(product.id)}
+                        className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4.5 h-4.5" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

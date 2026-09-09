@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { BarChart3, Calendar, Download } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
 
 // Import our new components
 import ReportsNav from "@/components/reports/ReportsNav";
@@ -19,9 +21,33 @@ const dateRangeToDays: Record<string, number> = {
 };
 
 export default function ReportsPage() {
+  const router = useRouter();
+  const { isLoading, hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState("overview");
   const [dateRange, setDateRange] = useState("last-7-days");
   const daysValue = dateRangeToDays[dateRange] ?? 7;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] text-slate-500">
+        Loading reports...
+      </div>
+    );
+  }
+
+  if (!hasPermission("read:reports")) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-center">
+        <p className="text-lg font-semibold text-slate-700">403 Forbidden: You do not have access to Analytics.</p>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500 pb-20 mt-2">

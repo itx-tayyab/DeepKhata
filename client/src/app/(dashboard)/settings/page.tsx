@@ -7,12 +7,14 @@ import GeneralTab from "@/components/settings/GeneralTab";
 import TeamTab from "@/components/settings/TeamTab";
 import PortalTab from "@/components/settings/PortalTab";
 import NotificationsTab from "@/components/settings/NotificationsTab";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Loader2, AlertCircle } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:5000/settings";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile");
+  const { hasPermission } = usePermissions();
   
   const [userProfile, setUserProfile] = useState<any>(null);
   const [businessData, setBusinessData] = useState<any>(null);
@@ -50,7 +52,7 @@ export default function SettingsPage() {
         if (businessJson.success) setBusinessData(businessJson.business);
         
         // If owner, default to general tab. If staff, default to profile.
-        if (profileData.profile?.role === "OWNER") setActiveTab("general");
+        if (hasPermission("manage:business")) setActiveTab("general");
 
       } catch (err: any) {
         setError("Failed to load settings data.");
@@ -60,7 +62,7 @@ export default function SettingsPage() {
     };
 
     fetchSettingsData();
-  }, []);
+  }, [hasPermission]);
 
   if (isLoading) {
     return (
@@ -95,15 +97,14 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <SettingsNav activeTab={activeTab} setActiveTab={setActiveTab} role={userProfile.role} />
+      <SettingsNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <div className="w-full flex flex-col gap-8">
         {activeTab === "profile" && <ProfileTab user={userProfile} onProfileUpdate={updateUserProfile} />}
         
-        {/* Only render Business/Team tabs if they are the OWNER */}
-        {activeTab === "general" && userProfile.role === "OWNER" && <GeneralTab business={businessData} onBusinessUpdate={updateBusinessData} />}
-        {activeTab === "team" && userProfile.role === "OWNER" && <TeamTab />}
-        {activeTab === "portal" && userProfile.role === "OWNER" && <PortalTab user={userProfile} />}
+        {activeTab === "general" && hasPermission("manage:business") && <GeneralTab business={businessData} onBusinessUpdate={updateBusinessData} />}
+        {activeTab === "team" && hasPermission("manage:team") && <TeamTab />}
+        {activeTab === "portal" && hasPermission("manage:business") && <PortalTab user={userProfile} />}
         
         {activeTab === "notifications" && <NotificationsTab />}
       </div>

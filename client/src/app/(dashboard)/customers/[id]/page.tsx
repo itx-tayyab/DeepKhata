@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import EditCustomerModal from "@/components/modals/EditCustomerModal";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ArrowLeft, User, Phone, MapPin, Mail,
   Plus, MessageCircle, ShoppingBag, Wallet,
   Calendar, CheckCircle2, AlertCircle, Clock,
-  QrCode, ShieldAlert, CreditCard, UserX, XCircle
+  QrCode, ShieldAlert, CreditCard, UserX, XCircle, Lock
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:5000";
@@ -28,6 +29,8 @@ const getAuthHeaders = () => {
 export default function CustomerProfilePage() {
   const params = useParams();
   const id = params?.id as string;
+  const { hasPermission } = usePermissions();
+  const canManageRisk = hasPermission("manage:risk");
 
   const [customer, setCustomer] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -250,6 +253,7 @@ export default function CustomerProfilePage() {
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4" /> Risk & Credit Rules
+              {!canManageRisk && <Lock className="w-3 h-3 text-slate-300" />}
             </h3>
 
             <div className="space-y-5">
@@ -263,10 +267,11 @@ export default function CustomerProfilePage() {
                   <input
                     type="number"
                     value={creditLimit}
+                    disabled={!canManageRisk}
                     onChange={(e) => setCreditLimit(Number(e.target.value))}
                     onBlur={handleCreditLimitBlur}
                     onKeyDown={handleCreditLimitKeyDown}
-                    className="w-full py-2 px-3 text-sm outline-none bg-transparent font-bold text-slate-900"
+                    className={`w-full py-2 px-3 text-sm outline-none font-bold ${canManageRisk ? "bg-transparent text-slate-900" : "bg-slate-100 text-slate-500 cursor-not-allowed"}`}
                   />
                 </div>
                 <div className="flex justify-between mt-1 text-[10px] font-medium">
@@ -284,8 +289,8 @@ export default function CustomerProfilePage() {
                   <p className="text-[10px] text-rose-700/80 leading-tight mt-0.5">Blocks staff from giving udhaar.</p>
                 </div>
                 <div
-                  onClick={handleToggleDefaulter}
-                  className={`w-11 h-6 rounded-full p-1 cursor-pointer transition-colors ${isDefaulter ? 'bg-rose-600' : 'bg-slate-300'}`}
+                  onClick={canManageRisk ? handleToggleDefaulter : undefined}
+                  className={`w-11 h-6 rounded-full p-1 transition-colors ${canManageRisk ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${isDefaulter ? 'bg-rose-600' : 'bg-slate-300'}`}
                 >
                   <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${isDefaulter ? 'translate-x-5' : 'translate-x-0'}`}></div>
                 </div>
