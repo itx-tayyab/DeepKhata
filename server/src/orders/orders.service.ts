@@ -35,124 +35,136 @@ export class OrdersService {
       throw new BadRequestException('User does not belong to a workspace');
     const businessId = currentUser.businessId;
 
-    const completeOrder = await this.prisma.$transaction(async (tx) => {
-      let calculatedTotal = 0;
-      const secureProducts: Record<string, any> = {};
+    try {
+      const completeOrder = await this.prisma.$transaction(async (tx) => {
+        let calculatedTotal = 0;
+        const secureProducts: Record<string, any> = {};
 
-      for (const item of items) {
-        const product = await tx.product.findUnique({
-          where: { id: item.productId },
-        });
-        if (!product) throw new Error(`Product not found`);
-        if (product.stock < item.quantity) {
-          throw new Error(
-            `Not enough stock for ${product.name}. Only ${product.stock} left.`,
-          );
+        for (const item of items) {
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          });
+          if (!product) throw new Error(`Product not found`);
+          if (product.stock < item.quantity) {
+            throw new Error(
+              `Not enough stock for ${product.name}. Only ${product.stock} left.`,
+            );
+          }
+          secureProducts[item.productId] = product;
+          calculatedTotal += product.price * item.quantity;
         }
-        secureProducts[item.productId] = product;
-        calculatedTotal += product.price * item.quantity;
-      }
 
-      const finalGrandTotal = calculatedTotal - parsedDiscount;
+        const finalGrandTotal = calculatedTotal - parsedDiscount;
 
-      let calculatedPaymentStatus = 'UNPAID';
-      if (parsedAmountPaid >= finalGrandTotal) {
-        calculatedPaymentStatus = 'PAID';
-      } else if (parsedAmountPaid > 0) {
-        calculatedPaymentStatus = 'PARTIAL';
-      }
-
-      const udhaarRequested = finalGrandTotal - parsedAmountPaid;
-
-      if (udhaarRequested > 0) {
-        if (!customerId)
-          throw new Error(
-            'Walk-in customers must pay in full. Please select or create a customer profile to give Udhaar.',
-          );
-
-        const customer = await tx.customer.findUnique({
-          where: { id: customerId },
-        });
-        if (!customer)
-          throw new Error('Customer profile not found. Cannot process Udhaar.');
-        if (customer.isDefaulter)
-          throw new Error(
-            `SALE BLOCKED: ${customer.name} is marked as a Defaulter.`,
-          );
-        if (customer.creditLimit === 0)
-          throw new Error(
-            `SALE BLOCKED: ${customer.name} has a credit limit of Rs. 0.`,
-          );
-
-        const totalBilled = await tx.order.aggregate({
-          where: { customerId, status: { not: 'CANCELLED' } },
-          _sum: { totalAmount: true },
-        });
-
-        const totalPaid = await tx.payment.aggregate({
-          where: { order: { customerId, status: { not: 'CANCELLED' } } },
-          _sum: { amount: true },
-        });
-
-        const currentOutstanding =
-          (totalBilled._sum.totalAmount || 0) - (totalPaid._sum.amount || 0);
-        const projectedDebt = currentOutstanding + udhaarRequested;
-
-        if (projectedDebt > customer.creditLimit) {
-          const minimumCashRequired = projectedDebt - customer.creditLimit;
-          throw new Error(
-            `SALE BLOCKED: This exceeds ${customer.name}'s credit limit of Rs. ${customer.creditLimit.toLocaleString()}. You must collect at least Rs. ${minimumCashRequired.toLocaleString()} in cash right now to process this order.`,
-          );
+        let calculatedPaymentStatus = 'UNPAID';
+        if (parsedAmountPaid >= finalGrandTotal) {
+          calculatedPaymentStatus = 'PAID';
+        } else if (parsedAmountPaid > 0) {
+          calculatedPaymentStatus = 'PARTIAL';
         }
-      }
 
-      const order = await tx.order.create({
-        data: {
-          customerId: customerId || null,
-          businessId: businessId,
-          status: orderStatus,
-          discount: parsedDiscount,
-          paymentStatus: calculatedPaymentStatus as any,
-          totalAmount: finalGrandTotal,
-          createdBy: userId,
-        },
+        const udhaarRequested = finalGrandTotal - parsedAmountPaid;
+
+        if (udhaarRequested > 0) {
+          if (!customerId)
+            throw new Error(
+              'Walk-in customers must pay in full. Please select or create a customer profile to give Udhaar.',
+            );
+
+          const customer = await tx.customer.findUnique({
+            where: { id: customerId },
+          });
+          if (!customer)
+            throw new Error(
+              'Customer profile not found. Cannot process Udhaar.',
+            );
+          if (customer.isDefaulter)
+            throw new Error(
+              `SALE BLOCKED: ${customer.name} is marked as a Defaulter.`,
+            );
+          if (customer.creditLimit === 0)
+            throw new Error(
+              `SALE BLOCKED: ${customer.name} has a credit limit of Rs. 0.`,
+            );
+
+          const totalBilled = await tx.order.aggregate({
+            where: { customerId, status: { not: 'CANCELLED' } },
+            _sum: { totalAmount: true },
+          });
+
+          const totalPaid = await tx.payment.aggregate({
+            where: { order: { customerId, status: { not: 'CANCELLED' } } },
+            _sum: { amount: true },
+          });
+
+          const currentOutstanding =
+            (totalBilled._sum.totalAmount || 0) - (totalPaid._sum.amount || 0);
+          const projectedDebt = currentOutstanding + udhaarRequested;
+
+          if (projectedDebt > customer.creditLimit) {
+            const minimumCashRequired = projectedDebt - customer.creditLimit;
+            throw new Error(
+              `SALE BLOCKED: This exceeds ${customer.name}'s credit limit of Rs. ${customer.creditLimit.toLocaleString()}. You must collect at least Rs. ${minimumCashRequired.toLocaleString()} in cash right now to process this order.`,
+            );
+          }
+        }
+
+        const order = await tx.order.create({
+          data: {
+            customerId: customerId || null,
+            businessId: businessId,
+            status: orderStatus,
+            discount: parsedDiscount,
+            paymentStatus: calculatedPaymentStatus as any,
+            totalAmount: finalGrandTotal,
+            createdBy: userId,
+          },
+        });
+
+        for (const item of items) {
+          await tx.orderItem.create({
+            data: {
+              orderId: order.id,
+              productId: item.productId,
+              quantity: item.quantity,
+              price: secureProducts[item.productId].price,
+            },
+          });
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+
+        if (parsedAmountPaid > 0) {
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              amount: parsedAmountPaid,
+              method: paymentMethod as any,
+              receivedBy: userId,
+            },
+          });
+        }
+
+        return order;
       });
 
-      for (const item of items) {
-        await tx.orderItem.create({
-          data: {
-            orderId: order.id,
-            productId: item.productId,
-            quantity: item.quantity,
-            price: secureProducts[item.productId].price,
-          },
-        });
-
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
+      return {
+        success: true,
+        message: 'Order placed successfully',
+        order: completeOrder,
+      };
+    } catch (error: any) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
       }
-
-      if (parsedAmountPaid > 0) {
-        await tx.payment.create({
-          data: {
-            orderId: order.id,
-            amount: parsedAmountPaid,
-            method: paymentMethod as any,
-            receivedBy: userId,
-          },
-        });
-      }
-
-      return order;
-    });
-
-    return {
-      success: true,
-      message: 'Order placed successfully',
-      order: completeOrder,
-    };
+      throw new BadRequestException(error.message || 'Failed to process order');
+    }
   }
 
   async getAllOrders(userId: string, query: any) {

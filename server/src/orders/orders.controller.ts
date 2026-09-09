@@ -6,6 +6,7 @@ import {
   Query,
   Param,
   Put,
+  Patch,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -41,6 +42,17 @@ export class OrdersController {
     return this.ordersService.getOrderById(req.user.id, id);
   }
 
+  @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('update:order')
+  async updateOrderStatusPatch(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.ordersService.updateOrderStatus(req.user.id, id, body);
+  }
+
   @Put('updatestatus/:id')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('update:order')
@@ -50,6 +62,13 @@ export class OrdersController {
     @Body() body: any,
   ) {
     return this.ordersService.updateOrderStatus(req.user.id, id, body);
+  }
+
+  @Post('recordpayment')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('update:order')
+  async recordPaymentRoute(@Req() req: any, @Body() body: any) {
+    return this.ordersService.recordPayment(req.user.id, body);
   }
 
   @Post('payment')

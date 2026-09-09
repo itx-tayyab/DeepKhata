@@ -8,6 +8,11 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @Get('dashboarddata')
+  async getDashboardDataFull(@Req() req: any) {
+    return this.dashboardService.getDashboardData(req.user.id);
+  }
+
   @Get()
   async getDashboardData(@Req() req: any) {
     return this.dashboardService.getDashboardData(req.user.id);

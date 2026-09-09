@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class OnboardingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
   async businessOnboarding(data: any) {
     const {
@@ -54,9 +58,22 @@ export class OnboardingService {
       return newBusiness;
     });
 
+    const accessToken = this.jwtService.sign(
+      {
+        id: ownerId,
+        role: 'OWNER',
+        businessId: result.id,
+      },
+      {
+        secret: process.env.ACCESS_TOKEN_SECRET,
+        expiresIn: (process.env.ACCESS_TOKEN_EXPIRATION || '1h') as any,
+      },
+    );
+
     return {
       message: 'Business Onboarding Successful',
       business: result,
+      accessToken,
     };
   }
 }

@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as cookieParser from 'cookie-parser';
+import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -14,7 +14,8 @@ async function bootstrap() {
 
   app.use(cookieParser());
 
-  await app.listen(process.env.PORT || 5001);
-  console.log(`Server is running on port ${process.env.PORT || 5001}`);
+  const port = process.env.PORT || 5000;
+  await app.listen(port);
+  console.log(`Server is running on port ${port}`);
 }
 bootstrap();

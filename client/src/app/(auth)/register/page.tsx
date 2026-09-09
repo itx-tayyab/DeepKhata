@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { Store, Mail, Lock, User, ArrowRight } from "lucide-react";
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const invitedEmail = searchParams.get("email") || "";
@@ -65,7 +65,7 @@ export default function RegisterPage() {
             BizFlow
           </span>
         </div>
-        
+
         <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-900">
           Create your account
         </h2>
@@ -76,12 +76,13 @@ export default function RegisterPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow-xl shadow-slate-200/50 sm:rounded-2xl sm:px-10 border border-slate-100">
-          
           <form onSubmit={handleSubmit} className="space-y-5">
-            
             {/* Full Name Input */}
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="name"
+                className="block text-sm font-medium text-slate-700"
+              >
                 Full Name
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -103,7 +104,10 @@ export default function RegisterPage() {
 
             {/* Email Input */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-slate-700"
+              >
                 Email address
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -128,7 +132,10 @@ export default function RegisterPage() {
 
             {/* Password Input */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-slate-700"
+              >
                 Password
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -150,13 +157,9 @@ export default function RegisterPage() {
             </div>
 
             {/* Submit Button */}
-            {error && (
-              <p className="text-sm text-red-600">{error}</p>
-            )}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
-            {success && (
-              <p className="text-sm text-green-600">{success}</p>
-            )}
+            {success && <p className="text-sm text-green-600">{success}</p>}
 
             <div className="pt-2">
               <button
@@ -168,9 +171,10 @@ export default function RegisterPage() {
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-            
+
             <p className="text-xs text-center text-slate-500 mt-4">
-              By signing up, you agree to our Terms of Service and Privacy Policy.
+              By signing up, you agree to our Terms of Service and Privacy
+              Policy.
             </p>
           </form>
 
@@ -178,7 +182,10 @@ export default function RegisterPage() {
           <div className="mt-6 text-center border-t border-slate-100 pt-6">
             <p className="text-sm text-slate-600">
               Already have an account?{" "}
-              <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500 transition-colors">
+              <Link
+                href="/login"
+                className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
+              >
                 Sign in instead
               </Link>
             </p>
@@ -186,5 +193,19 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500">
+          Loading...
+        </div>
+      }
+    >
+      <RegisterPageContent />
+    </Suspense>
   );
 }

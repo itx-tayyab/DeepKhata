@@ -24,9 +24,29 @@ export class SettingsController {
     return this.settingsService.profileInfo(req.user.id);
   }
 
+  @Get('profile')
+  async profileInfoAlias(@Req() req: any) {
+    return this.settingsService.profileInfo(req.user.id);
+  }
+
   @Get('businessinfo')
   async businessInfo(@Req() req: any) {
     return this.settingsService.businessInfo(req.user.id);
+  }
+
+  @Get('business')
+  async businessInfoAlias(@Req() req: any) {
+    return this.settingsService.businessInfo(req.user.id);
+  }
+
+  @Put('profile')
+  @UseInterceptors(FileInterceptor('avatar', { storage }))
+  async updateProfile(
+    @Req() req: any,
+    @Body() body: any,
+    @UploadedFile() file: any,
+  ) {
+    return this.settingsService.updateProfileInfo(req.user.id, body, file);
   }
 
   @Put('updateprofileinfo')
@@ -37,6 +57,16 @@ export class SettingsController {
     @UploadedFile() file: any,
   ) {
     return this.settingsService.updateProfileInfo(req.user.id, body, file);
+  }
+
+  @Put('business')
+  @UseInterceptors(FileInterceptor('logo', { storage }))
+  async updateBusiness(
+    @Req() req: any,
+    @Body() body: any,
+    @UploadedFile() file: any,
+  ) {
+    return this.settingsService.updateBusinessInfo(req.user.id, body, file);
   }
 
   @Put('updatebusinessinfo')

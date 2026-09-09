@@ -88,7 +88,7 @@ export class TeamService {
       { id: result.id, role: result.role, businessId: result.businessId },
       {
         secret: process.env.ACCESS_TOKEN_SECRET,
-        expiresIn: process.env.ACCESS_TOKEN_EXPIRATION,
+        expiresIn: (process.env.ACCESS_TOKEN_EXPIRATION || '1h') as any,
       },
     );
 

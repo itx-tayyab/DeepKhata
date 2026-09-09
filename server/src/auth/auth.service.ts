@@ -36,7 +36,19 @@ export class AuthService {
       },
     });
 
-    return { user: NewUser };
+    const accesstoken = this.jwtService.sign(
+      {
+        id: NewUser.id,
+        role: NewUser.role,
+        businessId: NewUser.businessId,
+      },
+      {
+        secret: process.env.ACCESS_TOKEN_SECRET,
+        expiresIn: (process.env.ACCESS_TOKEN_EXPIRATION || '1h') as any,
+      },
+    );
+
+    return { user: NewUser, accessToken: accesstoken };
   }
 
   async login(data: any, res: Response) {
@@ -63,7 +75,7 @@ export class AuthService {
       },
       {
         secret: process.env.ACCESS_TOKEN_SECRET,
-        expiresIn: process.env.ACCESS_TOKEN_EXPIRATION,
+        expiresIn: (process.env.ACCESS_TOKEN_EXPIRATION || '1h') as any,
       },
     );
 
@@ -73,7 +85,7 @@ export class AuthService {
       },
       {
         secret: process.env.REFRESH_TOKEN_SECRET,
-        expiresIn: process.env.REFRESH_TOKEN_EXPIRATION,
+        expiresIn: (process.env.REFRESH_TOKEN_EXPIRATION || '7d') as any,
       },
     );
 

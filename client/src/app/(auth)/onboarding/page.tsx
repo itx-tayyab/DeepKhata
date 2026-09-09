@@ -2,26 +2,26 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  Building2, 
-  MapPin, 
-  Globe, 
-  CheckCircle2, 
-  ArrowRight, 
+import {
+  Building2,
+  MapPin,
+  Globe,
+  CheckCircle2,
+  ArrowRight,
   ArrowLeft,
   Store,
-  Wallet
+  Wallet,
 } from "lucide-react";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
-  const[isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   // Form State
-  const[formData, setFormData] = useState({
+  const [formData, setFormData] = useState({
     businessName: "",
     industry: "",
     currency: "PKR",
@@ -42,7 +42,8 @@ export default function OnboardingPage() {
 
     try {
       const rawUser = localStorage.getItem("user");
-      if (!rawUser) throw new Error("You must be signed in to complete onboarding");
+      if (!rawUser)
+        throw new Error("You must be signed in to complete onboarding");
       const user = JSON.parse(rawUser);
       const ownerId = user.id || user.ID || user.userId || user?.id;
       if (!ownerId) throw new Error("Unable to determine owner id");
@@ -67,6 +68,10 @@ export default function OnboardingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message || "Onboarding failed");
 
+      if (data?.accessToken) {
+        localStorage.setItem("accessToken", data.accessToken);
+      }
+
       const storedUser = localStorage.getItem("user");
       if (storedUser && data?.business?.id) {
         try {
@@ -77,7 +82,7 @@ export default function OnboardingPage() {
               ...currentUser,
               businessId: data.business.id,
               role: "OWNER",
-            })
+            }),
           );
         } catch {
           // Ignore local persistence issues; server state is already updated.
@@ -98,7 +103,6 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans text-slate-900">
       <div className="sm:mx-auto sm:w-full sm:max-w-2xl">
-        
         {/* Header & Progress Bar */}
         <div className="mb-8 text-center">
           <div className="flex justify-center mb-4">
@@ -109,21 +113,24 @@ export default function OnboardingPage() {
           <h2 className="text-3xl font-extrabold text-slate-900 mb-2">
             Let's set up your workspace
           </h2>
-          <p className="text-slate-600">
-            Step {step} of 3
-          </p>
-          
+          <p className="text-slate-600">Step {step} of 3</p>
+
           {/* Progress Indicator */}
           <div className="mt-6 flex items-center justify-center gap-2 max-w-xs mx-auto">
-            <div className={`h-2 flex-1 rounded-full ${step >= 1 ? "bg-blue-600" : "bg-slate-200"} transition-colors`} />
-            <div className={`h-2 flex-1 rounded-full ${step >= 2 ? "bg-blue-600" : "bg-slate-200"} transition-colors`} />
-            <div className={`h-2 flex-1 rounded-full ${step >= 3 ? "bg-blue-600" : "bg-slate-200"} transition-colors`} />
+            <div
+              className={`h-2 flex-1 rounded-full ${step >= 1 ? "bg-blue-600" : "bg-slate-200"} transition-colors`}
+            />
+            <div
+              className={`h-2 flex-1 rounded-full ${step >= 2 ? "bg-blue-600" : "bg-slate-200"} transition-colors`}
+            />
+            <div
+              className={`h-2 flex-1 rounded-full ${step >= 3 ? "bg-blue-600" : "bg-slate-200"} transition-colors`}
+            />
           </div>
         </div>
 
         {/* Main Card */}
         <div className="bg-white py-8 px-4 shadow-xl shadow-slate-200/50 sm:rounded-2xl sm:px-10 border border-slate-100 min-h-[400px] flex flex-col justify-between">
-          
           {/* 🟢 STEP 1: Core Identity */}
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -133,7 +140,9 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Business Name *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Business Name *
+                </label>
                 <input
                   type="text"
                   value={formData.businessName}
@@ -145,7 +154,9 @@ export default function OnboardingPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Industry</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Industry
+                  </label>
                   <select
                     value={formData.industry}
                     onChange={(e) => updateForm("industry", e.target.value)}
@@ -159,7 +170,9 @@ export default function OnboardingPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Team Size</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Team Size
+                  </label>
                   <select
                     value={formData.teamSize}
                     onChange={(e) => updateForm("teamSize", e.target.value)}
@@ -186,7 +199,9 @@ export default function OnboardingPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Base Currency</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Base Currency
+                  </label>
                   <div className="relative">
                     <Wallet className="absolute left-3 top-3.5 h-5 w-5 text-slate-400" />
                     <select
@@ -200,11 +215,15 @@ export default function OnboardingPage() {
                       <option value="GBP">GBP - British Pound</option>
                     </select>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">This is how your invoices will be generated.</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    This is how your invoices will be generated.
+                  </p>
                 </div>
-                
+
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Business Phone</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Business Phone
+                  </label>
                   <input
                     type="tel"
                     value={formData.phone}
@@ -216,7 +235,9 @@ export default function OnboardingPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Headquarters / Shop Address</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Headquarters / Shop Address
+                </label>
                 <textarea
                   rows={2}
                   value={formData.address}
@@ -238,12 +259,15 @@ export default function OnboardingPage() {
 
               <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl mb-4">
                 <p className="text-sm text-blue-800">
-                  BizFlow gives you a public link to share invoices and let customers place orders directly. Let's claim your unique URL.
+                  BizFlow gives you a public link to share invoices and let
+                  customers place orders directly. Let's claim your unique URL.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Portal URL Slug *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Portal URL Slug *
+                </label>
                 <div className="flex rounded-xl shadow-sm border border-slate-300 overflow-hidden focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition-shadow">
                   <span className="inline-flex items-center px-4 bg-slate-50 text-slate-500 text-sm border-r border-slate-300">
                     bizflow.com/p/
@@ -251,7 +275,12 @@ export default function OnboardingPage() {
                   <input
                     type="text"
                     value={formData.slug}
-                    onChange={(e) => updateForm("slug", e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                    onChange={(e) =>
+                      updateForm(
+                        "slug",
+                        e.target.value.toLowerCase().replace(/\s+/g, "-"),
+                      )
+                    }
                     className="flex-1 block w-full py-3 px-4 outline-none text-slate-900"
                     placeholder="your-brand"
                   />
@@ -262,7 +291,8 @@ export default function OnboardingPage() {
               {formData.slug && (
                 <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                   <CheckCircle2 className="w-4 h-4" />
-                  Your portal will be live at <strong>bizflow.com/p/{formData.slug}</strong>
+                  Your portal will be live at{" "}
+                  <strong>bizflow.com/p/{formData.slug}</strong>
                 </div>
               )}
             </div>
@@ -274,7 +304,9 @@ export default function OnboardingPage() {
               onClick={() => setStep(step - 1)}
               disabled={step === 1 || isSubmitting}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                step === 1 ? "text-transparent cursor-default" : "text-slate-600 hover:bg-slate-100"
+                step === 1
+                  ? "text-transparent cursor-default"
+                  : "text-slate-600 hover:bg-slate-100"
               }`}
             >
               <ArrowLeft className="w-4 h-4" />
@@ -301,7 +333,6 @@ export default function OnboardingPage() {
               </button>
             )}
           </div>
-
         </div>
       </div>
     </div>

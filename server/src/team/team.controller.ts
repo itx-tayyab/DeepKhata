@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -32,9 +33,21 @@ export class TeamController {
     return this.teamService.invitedByToken(token);
   }
 
+  @Post('join')
+  async acceptInviteJoin(@Body() body: any) {
+    return this.teamService.acceptInvite(body);
+  }
+
   @Post('accept-invite')
   async acceptInvite(@Body() body: any) {
     return this.teamService.acceptInvite(body);
+  }
+
+  @Get('activemembers')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async activeMembersTeam(@Req() req: any) {
+    return this.teamService.activeMembers(req.user.id);
   }
 
   @Get('active')
@@ -44,11 +57,25 @@ export class TeamController {
     return this.teamService.activeMembers(req.user.id);
   }
 
+  @Get('pendinginvites')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async pendingInvitesTeam(@Req() req: any) {
+    return this.teamService.pendingInvites(req.user.id);
+  }
+
   @Get('pending')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('manage:team')
   async pendingInvites(@Req() req: any) {
     return this.teamService.pendingInvites(req.user.id);
+  }
+
+  @Patch('updaterole')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async updateRolePatch(@Req() req: any, @Body() body: any) {
+    return this.teamService.updateRole(req.user.id, body);
   }
 
   @Put('role')
@@ -58,6 +85,13 @@ export class TeamController {
     return this.teamService.updateRole(req.user.id, body);
   }
 
+  @Delete('removemember')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async removeMemberTeam(@Req() req: any, @Body() body: any) {
+    return this.teamService.removeMember(req.user.id, body);
+  }
+
   @Delete('remove')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('manage:team')
@@ -65,11 +99,25 @@ export class TeamController {
     return this.teamService.removeMember(req.user.id, body);
   }
 
+  @Post('resendinvite')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async resendInviteTeam(@Req() req: any, @Body() body: any) {
+    return this.teamService.resendInvite(req.user.id, body);
+  }
+
   @Post('resend-invite')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('manage:team')
   async resendInvite(@Req() req: any, @Body() body: any) {
     return this.teamService.resendInvite(req.user.id, body);
+  }
+
+  @Delete('cancelinvite')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('manage:team')
+  async cancelInviteTeam(@Req() req: any, @Body() body: any) {
+    return this.teamService.cancelInvite(req.user.id, body);
   }
 
   @Delete('cancel-invite')
