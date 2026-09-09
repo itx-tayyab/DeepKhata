@@ -1,5 +1,15 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+## Client-Side Architecture (Next.js)
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+### Offline-First POS & Ledger
+
+- Use Dexie.js (IndexedDB) to cache parts catalogs, cabinet mappings, and customer accounts locally.
+- POS operations and ledger memo creation must execute against local storage immediately without waiting for API responses.
+- Every offline transaction must receive a client-generated UUID and enter an append-only sync queue in IndexedDB.
+- Implement a background sync worker that flushes queued transactions to `POST /api/v1/sync` when `navigator.onLine` fires.
+
+### WhatsApp Receipts
+
+- Avoid third-party messaging APIs for receipts.
+- Construct direct URI links using `https://wa.me/<phone>?text=<encoded_invoice>` so mobile operators can open WhatsApp natively to share bills and ledger status.
+
+---
