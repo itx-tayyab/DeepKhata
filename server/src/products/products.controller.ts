@@ -43,4 +43,16 @@ export class ProductsController {
   async getCategories(@Req() req: any) {
     return this.productsService.getCategories(req.user.id);
   }
+
+  @Get('getcabinets')
+  async getCabinets(@Req() req: any) {
+    return this.productsService.getCabinets(req.user.id);
+  }
+
+  @Post('addcabinet')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('write:products')
+  async addCabinet(@Req() req: any, @Body() body: any) {
+    return this.productsService.addCabinet(req.user.id, body);
+  }
 }

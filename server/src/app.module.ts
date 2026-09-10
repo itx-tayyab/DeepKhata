@@ -14,6 +14,7 @@ import { TeamModule } from './team/team.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { LedgerModule } from './ledger/ledger.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { LedgerModule } from './ledger/ledger.module';
     SettingsModule,
     TeamModule,
     LedgerModule,
+    SyncModule,
   ],
   controllers: [AppController],
   providers: [AppService],

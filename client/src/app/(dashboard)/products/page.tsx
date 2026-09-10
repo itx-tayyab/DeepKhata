@@ -14,8 +14,11 @@ import {
   Tag,
   Barcode,
 } from "lucide-react";
-import AddProductModal from "@/components/modals/AddProductModal"; // 🟢 IMPORT MODAL
+import AddProductModal, {
+  ProductFormValues,
+} from "@/components/modals/AddProductModal"; // 🟢 IMPORT MODAL
 import { usePermissions } from "@/hooks/usePermissions";
+import { MapPin, Layers } from "lucide-react";
 
 type StockFilter = "all" | "low" | "out";
 
@@ -28,6 +31,15 @@ type ProductRecord = {
   category?: {
     name?: string | null;
   } | null;
+  instances?: Array<{
+    id: string;
+    condition: string;
+    status: string;
+    cabinet?: {
+      name?: string | null;
+      location?: string | null;
+    } | null;
+  }>;
 };
 
 type ProductRow = {
@@ -37,14 +49,8 @@ type ProductRow = {
   category: string;
   price: number;
   stock: number;
-};
-
-type ProductFormValues = {
-  name: string;
-  sku: string;
-  category: string;
-  price: number;
-  stock: number;
+  location: string;
+  conditions: string[];
 };
 
 const API_BASE_URL = "http://localhost:5000";
@@ -61,14 +67,26 @@ const getAuthHeaders = () => {
   };
 };
 
-const normalizeProduct = (product: ProductRecord): ProductRow => ({
-  id: product.id,
-  name: product.name,
-  sku: product.sku,
-  category: product.category?.name ?? "Uncategorized",
-  price: Number(product.price ?? 0),
-  stock: Number(product.stock ?? 0),
-});
+const normalizeProduct = (product: ProductRecord): ProductRow => {
+  const instances = product.instances || [];
+  const primaryCabinet = instances[0]?.cabinet;
+  const location =
+    primaryCabinet?.location || primaryCabinet?.name || "Cabinet (Shop Bin)";
+  const uniqueConditions = Array.from(
+    new Set(instances.map((i) => i.condition).filter(Boolean)),
+  );
+
+  return {
+    id: product.id,
+    name: product.name,
+    sku: product.sku,
+    category: product.category?.name ?? "Uncategorized",
+    price: Number(product.price ?? 0),
+    stock: Number(product.stock ?? 0),
+    location,
+    conditions: uniqueConditions.length ? uniqueConditions : ["ORIGINAL_PULL"],
+  };
+};
 
 function ProductsPageContent() {
   const router = useRouter();
@@ -423,9 +441,14 @@ function ProductsPageContent() {
             <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
               <tr>
                 <th className="px-6 py-4 font-semibold">Product & Category</th>
-                <th className="px-6 py-4 font-semibold w-40">Price (Rs)</th>
-                <th className="px-6 py-4 font-semibold w-48">Stock Level</th>
-                <th className="px-6 py-4 font-semibold w-32 text-right">
+                <th className="px-6 py-4 font-semibold w-36">Price (Rs)</th>
+                <th className="px-6 py-4 font-semibold w-56">
+                  Spatial Location (Cabinet)
+                </th>
+                <th className="px-6 py-4 font-semibold w-52">
+                  Condition & Instances
+                </th>
+                <th className="px-6 py-4 font-semibold w-24 text-right">
                   Actions
                 </th>
               </tr>
@@ -433,13 +456,13 @@ function ProductsPageContent() {
             <tbody className="divide-y divide-slate-100">
               {isLoadingProducts ? (
                 <tr>
-                  <td className="px-6 py-8 text-slate-500" colSpan={4}>
+                  <td className="px-6 py-8 text-slate-500" colSpan={5}>
                     Loading products from the server...
                   </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td className="px-6 py-8 text-slate-500" colSpan={4}>
+                  <td className="px-6 py-8 text-slate-500" colSpan={5}>
                     No products match the current filters.
                   </td>
                 </tr>
@@ -470,24 +493,39 @@ function ProductsPageContent() {
                     </td>
 
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-28">
-                          {product.stock > 5 ? (
-                            <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 className="w-3 h-3" />{" "}
-                              {product.stock} in stock
+                      <div className="flex items-center gap-2 text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200/80 px-2.5 py-1.5 rounded-lg w-fit">
+                        <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span className="truncate max-w-[180px]">
+                          {product.location}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-wrap gap-1">
+                          {product.conditions.map((cond) => (
+                            <span
+                              key={cond}
+                              className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                cond === "ORIGINAL_PULL"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : cond === "DEAD_DONOR"
+                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                    : cond === "COPY"
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                              }`}
+                            >
+                              {cond.replace(/_/g, " ")}
                             </span>
-                          ) : product.stock > 0 ? (
-                            <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-[11px] font-bold bg-yellow-50 text-yellow-700 border border-yellow-200">
-                              <AlertCircle className="w-3 h-3" /> Only{" "}
-                              {product.stock} left
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                              <AlertCircle className="w-3 h-3" /> Out of stock
-                            </span>
-                          )}
+                          ))}
                         </div>
+                        <span className="text-xs font-semibold text-slate-600">
+                          {product.stock > 0
+                            ? `${product.stock} instances available`
+                            : "0 instances (exhausted)"}
+                        </span>
                       </div>
                     </td>
 

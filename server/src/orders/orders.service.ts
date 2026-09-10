@@ -68,14 +68,15 @@ export class OrdersService {
           calculatedPaymentStatus = 'PARTIAL';
         }
 
-        if (udhaarRequested > 0 && !customerId) {
+        if (orderStatus === 'FINAL' && udhaarRequested > 0 && !customerId) {
           throw new Error(
-            'Walk-in customers must pay in full. Please select or create a customer profile to give Udhaar.',
+            'Walk-in customers must pay in full for FINAL sales. Please select or create a customer profile to give Udhaar.',
           );
         }
 
         const order = await tx.order.create({
           data: {
+            id: data.id || undefined,
             businessId,
             customerId: customerId || null,
             totalAmount: finalGrandTotal,

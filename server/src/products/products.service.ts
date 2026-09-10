@@ -55,8 +55,71 @@ export class ProductsService {
     return { success: true, categories };
   }
 
+  async getCabinets(userId: string) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+    if (!currentUser?.businessId)
+      throw new BadRequestException('No business found.');
+
+    const cabinets = await this.prisma.cabinet.findMany({
+      where: { businessId: currentUser.businessId },
+      include: {
+        _count: { select: { instances: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return { success: true, cabinets };
+  }
+
+  async addCabinet(userId: string, data: any) {
+    const { name, rack, shelf, bin } = data;
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+    if (!currentUser?.businessId)
+      throw new BadRequestException('No business found.');
+
+    const locationParts = [
+      rack ? `Rack ${rack}` : null,
+      shelf ? `Shelf ${shelf}` : null,
+      bin ? `Bin ${bin}` : null,
+    ].filter(Boolean);
+
+    const locationStr = locationParts.join(' -> ');
+    const cabinetName =
+      name ||
+      (locationParts.length ? locationParts.join(' / ') : 'General Cabinet');
+
+    const cabinet = await this.prisma.cabinet.create({
+      data: {
+        name: cabinetName,
+        location: locationStr || 'Shop Storage',
+        businessId: currentUser.businessId,
+      },
+    });
+
+    return { success: true, cabinet };
+  }
+
   async addProduct(userId: string, data: any) {
-    const { name, price, category, stock, sku } = data;
+    const {
+      name,
+      price,
+      category,
+      sku,
+      // Spatial Inventory Fields
+      cabinetId,
+      rack,
+      shelf,
+      bin,
+      condition = 'ORIGINAL_PULL',
+      quantity = 1,
+    } = data;
+
     const currentUser = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { businessId: true },
@@ -74,18 +137,87 @@ export class ProductsService {
     if (!categoryExists)
       throw new BadRequestException('Category does not exist');
 
-    const product = await this.prisma.product.create({
-      data: {
-        name,
-        price,
-        categoryId: categoryExists.id,
-        stock,
-        sku,
-        businessId: currentUser.businessId,
-      },
+    const parsedPrice = Number(price) || 0;
+    const instanceQty = Math.max(1, Number(quantity) || 1);
+
+    // Map allowed condition values safely
+    const validConditions = [
+      'ORIGINAL_PULL',
+      'COPY',
+      'MINOR_SCRATCHES',
+      'WORKING',
+      'DEAD_DONOR',
+    ];
+    const sanitizedCondition = validConditions.includes(condition)
+      ? condition
+      : 'ORIGINAL_PULL';
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Resolve or create Spatial Cabinet
+      let targetCabinetId = cabinetId;
+      if (!targetCabinetId && (rack || shelf || bin)) {
+        const locationParts = [
+          rack ? `Rack ${rack}` : null,
+          shelf ? `Shelf ${shelf}` : null,
+          bin ? `Bin ${bin}` : null,
+        ].filter(Boolean);
+        const locationStr = locationParts.join(' -> ');
+        const cabName = locationParts.join(' / ') || 'Cabinet Location';
+
+        const newCabinet = await tx.cabinet.create({
+          data: {
+            name: cabName,
+            location: locationStr,
+            businessId: currentUser.businessId,
+          },
+        });
+        targetCabinetId = newCabinet.id;
+      }
+
+      // 2. Create the master Product record with stock synced to instance count
+      const product = await tx.product.create({
+        data: {
+          name,
+          price: parsedPrice,
+          categoryId: categoryExists.id,
+          stock: instanceQty,
+          sku: sku || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+          businessId: currentUser.businessId,
+        },
+      });
+
+      // 3. Create discrete ProductInstance records tied to the physical Cabinet
+      const instancesData = Array.from({ length: instanceQty }).map(
+        (_, index) => ({
+          productId: product.id,
+          cabinetId: targetCabinetId || null,
+          condition: sanitizedCondition as any,
+          status: 'AVAILABLE' as any,
+          serialNumber: sku ? `${sku}-${index + 1}` : null,
+        }),
+      );
+
+      await tx.productInstance.createMany({
+        data: instancesData,
+      });
+
+      const fullProduct = await tx.product.findUnique({
+        where: { id: product.id },
+        include: {
+          category: true,
+          instances: {
+            include: { cabinet: true },
+          },
+        },
+      });
+
+      return fullProduct;
     });
 
-    return { message: 'Product Created Successfully', product };
+    return {
+      message: 'Product & Spatial Instances Created Successfully',
+      product: result,
+    };
   }
 
   async getProducts(userId: string, query: any) {
@@ -116,7 +248,14 @@ export class ProductsService {
 
     const products = await this.prisma.product.findMany({
       where: queryConditions,
-      include: { category: true },
+      include: {
+        category: true,
+        instances: {
+          include: { cabinet: true },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { id: 'desc' },
     });
 
     return { success: true, products };

@@ -17,7 +17,15 @@ import {
   PackageOpen,
   ChevronDown,
   AlertCircle,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  HardDriveDownload,
+  Layers,
+  MapPin,
 } from "lucide-react";
+import { offlineDb, type SyncQueueItem, type LocalProduct } from "@/lib/db";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 
 type Product = {
   id: string;
@@ -26,6 +34,12 @@ type Product = {
   price: number;
   stock: number;
   category?: { name: string };
+  instances?: Array<{
+    id: string;
+    condition: string;
+    status: string;
+    cabinet?: { name?: string | null; location?: string | null } | null;
+  }>;
 };
 
 type CartItem = Product & { qty: number };
@@ -33,8 +47,9 @@ type CartItem = Product & { qty: number };
 function CreateOrderPOSContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isOnline, pendingCount, triggerSync } = useOfflineSync();
 
-  // 1. API STATES
+  // 1. API & CATALOG STATES
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [categories, setCategories] = useState<string[]>(["All"]);
@@ -45,7 +60,7 @@ function CreateOrderPOSContent() {
     "walk-in",
   );
 
-  // 3. NEW CUSTOMER SEARCH STATES
+  // 3. CUSTOMER SEARCH STATES
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerResults, setCustomerResults] = useState<any[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
@@ -60,36 +75,70 @@ function CreateOrderPOSContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [offlineSuccessMsg, setOfflineSuccessMsg] = useState("");
 
   // ==========================================
-  // 🟢 FETCH REAL CATEGORIES
+  // 🟢 FETCH REAL CATEGORIES (Cached with offline fallback)
   // ==========================================
   useEffect(() => {
     const fetchCategories = async () => {
       try {
         const token = localStorage.getItem("accessToken");
         const res = await fetch("http://localhost:5000/product/getcategories", {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();
-        if (data.success) {
+        if (data.success && Array.isArray(data.categories)) {
           const names = data.categories.map((c: any) => c.name);
           setCategories(["All", ...names]);
         }
       } catch (error) {
-        console.error("Failed to fetch categories", error);
+        console.warn(
+          "Categories fetch failed, reading from Dexie cache...",
+          error,
+        );
+        const cachedProducts = await offlineDb.products.toArray();
+        const catSet = new Set<string>();
+        cachedProducts.forEach((p) => {
+          if (p.category?.name) catSet.add(p.category.name);
+        });
+        if (catSet.size > 0) {
+          setCategories(["All", ...Array.from(catSet)]);
+        }
       }
     };
-    fetchCategories();
+    void fetchCategories();
   }, []);
 
   // ==========================================
-  // 🟢 FETCH REAL PRODUCTS
+  // 🟢 FETCH & CACHE PRODUCTS IN DEXIE INDEXEDDB
   // ==========================================
   useEffect(() => {
     const fetchProducts = async () => {
       setIsLoadingProducts(true);
       try {
+        // If navigator is offline, read directly from Dexie
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const cached = await offlineDb.products.toArray();
+          let filtered = cached;
+          if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            filtered = filtered.filter(
+              (p) =>
+                p.name.toLowerCase().includes(q) ||
+                (p.sku && p.sku.toLowerCase().includes(q)),
+            );
+          }
+          if (activeCategory !== "All") {
+            filtered = filtered.filter(
+              (p) => p.category?.name === activeCategory,
+            );
+          }
+          setProducts(filtered as Product[]);
+          setIsLoadingProducts(false);
+          return;
+        }
+
         const token = localStorage.getItem("accessToken");
         const params = new URLSearchParams();
         if (searchQuery) params.append("search", searchQuery);
@@ -98,27 +147,40 @@ function CreateOrderPOSContent() {
         const res = await fetch(
           `http://localhost:5000/product/getproducts?${params.toString()}`,
           {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
           },
         );
         const data = await res.json();
 
         if (data.success) {
           setProducts(data.products);
+          // 🟢 Cache into IndexedDB
+          void offlineDb.products.bulkPut(data.products);
+        } else {
+          // Fallback to Dexie cache
+          const cached = await offlineDb.products.toArray();
+          if (cached.length > 0) setProducts(cached as Product[]);
         }
       } catch (error) {
-        console.error("Failed to fetch products", error);
+        console.warn(
+          "Failed to fetch products online, fallback to IndexedDB:",
+          error,
+        );
+        const cached = await offlineDb.products.toArray();
+        if (cached.length > 0) {
+          setProducts(cached as Product[]);
+        }
       } finally {
         setIsLoadingProducts(false);
       }
     };
 
-    const delayDebounceFn = setTimeout(() => fetchProducts(), 300);
+    const delayDebounceFn = setTimeout(() => void fetchProducts(), 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, activeCategory]);
 
   // ==========================================
-  // 🟢 FETCH CUSTOMERS FOR SEARCH DROPDOWN
+  // 🟢 FETCH & CACHE CUSTOMERS IN DEXIE INDEXEDDB
   // ==========================================
   useEffect(() => {
     if (customerSearch.length < 2) {
@@ -129,19 +191,43 @@ function CreateOrderPOSContent() {
     const delayDebounceFn = setTimeout(async () => {
       setIsSearchingCustomer(true);
       try {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const q = customerSearch.toLowerCase();
+          const cached = await offlineDb.customers
+            .filter(
+              (c) =>
+                c.name.toLowerCase().includes(q) ||
+                c.phone.includes(customerSearch),
+            )
+            .toArray();
+          setCustomerResults(cached);
+          setIsSearchingCustomer(false);
+          return;
+        }
+
         const token = localStorage.getItem("accessToken");
         const res = await fetch(
           `http://localhost:5000/customer/getallcustomers?search=${customerSearch}`,
           {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
           },
         );
         const data = await res.json();
         if (data.success) {
           setCustomerResults(data.customers);
+          void offlineDb.customers.bulkPut(data.customers);
         }
       } catch (error) {
-        console.error("Failed to search customers", error);
+        console.warn("Searching customers from IndexedDB fallback...", error);
+        const q = customerSearch.toLowerCase();
+        const cached = await offlineDb.customers
+          .filter(
+            (c) =>
+              c.name.toLowerCase().includes(q) ||
+              c.phone.includes(customerSearch),
+          )
+          .toArray();
+        setCustomerResults(cached);
       } finally {
         setIsSearchingCustomer(false);
       }
@@ -160,37 +246,95 @@ function CreateOrderPOSContent() {
       const token = localStorage.getItem("accessToken");
 
       fetch(`http://localhost:5000/customer/${urlCustomerId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
         .then((res) => res.json())
         .then((data) => {
           if (data.success) setSelectedCustomer(data.customer);
         })
-        .catch((err) => console.error(err));
+        .catch(() => {
+          // Check IndexedDB
+          void offlineDb.customers.get(urlCustomerId).then((cached) => {
+            if (cached) setSelectedCustomer(cached);
+          });
+        });
     }
   }, [searchParams]);
 
   // ==========================================
-  // SUBMIT THE ORDER
+  // 🟢 OFFLINE-FIRST POS CHECKOUT LOGIC
   // ==========================================
   const handleCompleteOrder = async () => {
     setIsSubmitting(true);
+    setOfflineSuccessMsg("");
+
+    const payload = {
+      customerId:
+        customerMode === "walk-in" ? null : selectedCustomer?.id || null,
+      items: cart.map((item) => ({
+        productId: item.id,
+        quantity: item.qty,
+        price: item.price,
+      })),
+      discount: Number(discount),
+      amountPaid: Number(amountPaid),
+      paymentMethod,
+      orderStatus, // "MEMO" or "FINAL"
+    };
+
+    // 🟢 1. OFFLINE INTERCEPTION
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      try {
+        const localOrderId = crypto.randomUUID();
+        const offlineItem: SyncQueueItem = {
+          id: localOrderId,
+          type: "CREATE_ORDER",
+          payload,
+          createdAt: new Date().toISOString(),
+          status: "pending",
+        };
+
+        await offlineDb.syncQueue.put(offlineItem);
+
+        // Deduct from local Dexie cached products
+        for (const ci of cart) {
+          const cachedProd = await offlineDb.products.get(ci.id);
+          if (cachedProd) {
+            await offlineDb.products.update(ci.id, {
+              stock: Math.max(0, cachedProd.stock - ci.qty),
+            });
+          }
+        }
+
+        // Update local React state
+        setProducts((prev) =>
+          prev.map((p) => {
+            const inCart = cart.find((ci) => ci.id === p.id);
+            return inCart
+              ? { ...p, stock: Math.max(0, p.stock - inCart.qty) }
+              : p;
+          }),
+        );
+
+        setOfflineSuccessMsg(
+          `Offline Intercept: ${orderStatus === "MEMO" ? "MEMO (Amanat)" : "FINAL Sale"} Order (#${localOrderId.slice(0, 8)}) safely queued in IndexedDB. Stock reserved. Will auto-sync when network returns.`,
+        );
+        setCart([]);
+        setAmountPaid("");
+        setDiscount(0);
+        return;
+      } catch (err: any) {
+        console.error("Failed to queue offline order:", err);
+        alert("Failed to queue offline order: " + err?.message);
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
+    // 🟢 2. ONLINE SUBMISSION WITH NETWORK RESILIENCE CATCH
     try {
       const token = localStorage.getItem("accessToken");
-
-      const payload = {
-        customerId: customerMode === "walk-in" ? null : selectedCustomer?.id,
-        items: cart.map((item) => ({
-          productId: item.id,
-          quantity: item.qty,
-          price: item.price,
-        })),
-        discount: Number(discount),
-        amountPaid: Number(amountPaid),
-        paymentMethod,
-        orderStatus,
-      };
-
       const res = await fetch("http://localhost:5000/order/neworder", {
         method: "POST",
         headers: {
@@ -206,7 +350,31 @@ function CreateOrderPOSContent() {
       alert("Order Successful!");
       router.push(`/orders/${data.order.id}`);
     } catch (error: any) {
-      alert(error.message);
+      // Fallback: If network failed during fetch, queue in Dexie instead of crashing!
+      const isNetworkIssue =
+        (typeof navigator !== "undefined" && !navigator.onLine) ||
+        error?.name === "TypeError" ||
+        error?.message?.includes("fetch");
+
+      if (isNetworkIssue) {
+        const localOrderId = crypto.randomUUID();
+        const offlineItem: SyncQueueItem = {
+          id: localOrderId,
+          type: "CREATE_ORDER",
+          payload,
+          createdAt: new Date().toISOString(),
+          status: "pending",
+        };
+        await offlineDb.syncQueue.put(offlineItem);
+        setOfflineSuccessMsg(
+          `Network dropped: ${orderStatus} Order queued in IndexedDB (#${localOrderId.slice(0, 8)}). Will sync automatically.`,
+        );
+        setCart([]);
+        setAmountPaid("");
+        setDiscount(0);
+      } else {
+        alert(error.message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -219,7 +387,7 @@ function CreateOrderPOSContent() {
       const exists = prev.find((item) => item.id === product.id);
       if (exists) {
         if (exists.qty >= product.stock) {
-          alert("Cannot exceed available stock!");
+          alert("Cannot exceed available physical stock!");
           return prev;
         }
         return prev.map((item) =>
@@ -250,8 +418,9 @@ function CreateOrderPOSContent() {
   const pendingAmount = grandTotal - (Number(amountPaid) || 0);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden animate-in fade-in duration-500 mt-2">
-      <div className="flex items-center justify-between pb-4 border-b border-slate-200 shrink-0">
+    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden animate-in fade-in duration-500 mt-2 font-sans">
+      {/* 🟢 TOP POS HEADER & OFFLINE ENGINE STATUS BAR */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 shrink-0 gap-3">
         <div className="flex items-center gap-3">
           <Link
             href="/orders"
@@ -260,15 +429,69 @@ function CreateOrderPOSContent() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-900">Create Order</h1>
+            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              Create Order
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                POS
+              </span>
+            </h1>
             <p className="text-xs text-slate-500 hidden sm:block">
-              Point of Sale (POS)
+              Point of Sale • Spatial Inventory & Double-Entry Ledger
             </p>
           </div>
         </div>
+
+        {/* Connection & Offline Sync Status Indicator */}
+        <div className="flex items-center gap-2">
+          {!isOnline ? (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm animate-pulse">
+              <WifiOff className="w-4 h-4 text-amber-600" />
+              <span>Offline Mode (Hafeez Centre)</span>
+              {pendingCount > 0 && (
+                <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded text-[10px]">
+                  {pendingCount} Queued
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1.5 rounded-xl">
+                <Wifi className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Online</span>
+              </div>
+              {pendingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void triggerSync()}
+                  className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl hover:bg-blue-100 transition-all shadow-sm"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Sync {pendingCount} Pending</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden mt-5 gap-6">
+      {/* 🟢 OFFLINE SUCCESS / QUEUE BANNER */}
+      {offlineSuccessMsg && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs font-bold text-amber-900 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <HardDriveDownload className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{offlineSuccessMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOfflineSuccessMsg("")}
+            className="text-amber-600 hover:text-amber-800 font-bold px-2 py-0.5"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden mt-3 gap-6">
         {/* LEFT SIDE: CATALOG */}
         <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="p-4 border-b border-slate-100 flex gap-3 shrink-0 bg-slate-50/50">
@@ -303,35 +526,72 @@ function CreateOrderPOSContent() {
               <div className="h-full flex items-center justify-center text-slate-400 text-sm">
                 Loading products...
               </div>
+            ) : products.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 text-sm">
+                <PackageOpen className="w-8 h-8 mb-2 opacity-30" />
+                No products found in this category.
+              </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {products.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => addToCart(product)}
-                    disabled={product.stock === 0}
-                    className={`flex flex-col text-left bg-white p-4 rounded-xl border transition-all active:scale-95 shadow-sm relative overflow-hidden ${product.stock === 0 ? "border-slate-200 opacity-60 cursor-not-allowed" : "border-slate-200 hover:border-blue-500 hover:shadow-md"}`}
-                  >
-                    <span className="font-bold text-slate-900 text-sm line-clamp-2 mb-1">
-                      {product.name}
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-500 mb-3 flex items-center gap-1">
-                      <Barcode className="w-3 h-3" /> {product.sku || "N/A"}
-                    </span>
-                    <div className="mt-auto flex items-end justify-between w-full">
-                      <span className="text-blue-600 font-black text-sm">
-                        Rs. {product.price.toLocaleString()}
+                {products.map((product) => {
+                  const primaryCabinet = product.instances?.[0]?.cabinet;
+                  const loc =
+                    primaryCabinet?.location ||
+                    primaryCabinet?.name ||
+                    "Cabinet Bin";
+                  const condition =
+                    product.instances?.[0]?.condition || "ORIGINAL_PULL";
+
+                  return (
+                    <button
+                      key={product.id}
+                      onClick={() => addToCart(product)}
+                      disabled={product.stock === 0}
+                      className={`flex flex-col text-left bg-white p-4 rounded-xl border transition-all active:scale-95 shadow-sm relative overflow-hidden ${
+                        product.stock === 0
+                          ? "border-slate-200 opacity-60 cursor-not-allowed"
+                          : "border-slate-200 hover:border-blue-500 hover:shadow-md"
+                      }`}
+                    >
+                      <span className="font-bold text-slate-900 text-sm line-clamp-2 mb-1">
+                        {product.name}
                       </span>
-                      <span
-                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${product.stock > 5 ? "bg-emerald-50 text-emerald-600" : product.stock > 0 ? "bg-yellow-50 text-yellow-600" : "bg-rose-50 text-rose-600"}`}
-                      >
-                        {product.stock === 0
-                          ? "Out of stock"
-                          : `${product.stock} left`}
-                      </span>
-                    </div>
-                  </button>
-                ))}
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-[10px] font-mono text-slate-500 flex items-center gap-0.5">
+                          <Barcode className="w-3 h-3" /> {product.sku || "N/A"}
+                        </span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                          {condition.replace(/_/g, " ")}
+                        </span>
+                      </div>
+
+                      {/* Spatial Cabinet Tag */}
+                      <div className="flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50/70 border border-indigo-100 px-1.5 py-0.5 rounded mb-2.5 truncate w-fit">
+                        <MapPin className="w-2.5 h-2.5 shrink-0" />
+                        <span className="truncate max-w-30">{loc}</span>
+                      </div>
+
+                      <div className="mt-auto flex items-end justify-between w-full">
+                        <span className="text-blue-600 font-black text-sm">
+                          Rs. {product.price.toLocaleString()}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            product.stock > 5
+                              ? "bg-emerald-50 text-emerald-600"
+                              : product.stock > 0
+                                ? "bg-yellow-50 text-yellow-600"
+                                : "bg-rose-50 text-rose-600"
+                          }`}
+                        >
+                          {product.stock === 0
+                            ? "Out of stock"
+                            : `${product.stock} left`}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -345,109 +605,85 @@ function CreateOrderPOSContent() {
                 onClick={() => {
                   setCustomerMode("walk-in");
                   setSelectedCustomer(null);
-                  setOrderStatus("COMPLETED"); // 🟢 FIX: Force status back to Completed
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${customerMode === "walk-in" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100"}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${customerMode === "walk-in" ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
               >
                 Walk-in Customer
               </button>
               <button
                 onClick={() => setCustomerMode("existing")}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${customerMode === "existing" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:bg-slate-100"}`}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${customerMode === "existing" ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
               >
                 Existing / Search
               </button>
             </div>
 
-            {/* REAL CUSTOMER SEARCH UI */}
             {customerMode === "existing" && (
               <div className="mt-3 relative">
-                {!selectedCustomer ? (
-                  <>
-                    <Search className="h-4 w-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="text"
-                      value={customerSearch}
-                      onChange={(e) => setCustomerSearch(e.target.value)}
-                      placeholder="Search customer by name or phone..."
-                      className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all"
-                    />
-
-                    {customerSearch.length >= 2 && (
-                      <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                        {isSearchingCustomer ? (
-                          <div className="p-3 text-xs text-center text-slate-500 font-medium">
-                            Searching...
-                          </div>
-                        ) : customerResults.length > 0 ? (
-                          customerResults.map((cust) => (
-                            <div
-                              key={cust.id}
-                              onClick={() => {
-                                setSelectedCustomer(cust);
-                                setCustomerSearch("");
-                              }}
-                              className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors"
-                            >
-                              <p className="text-sm font-bold text-slate-900">
-                                {cust.name}
-                              </p>
-                              <div className="flex items-center justify-between mt-0.5">
-                                <p className="text-xs font-medium text-slate-500">
-                                  {cust.phone}
-                                </p>
-                                {cust.balance > 0 && (
-                                  <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">
-                                    Owes Rs. {cust.balance.toLocaleString()}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="p-3 text-xs text-center text-slate-500">
-                            No customers found.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                {selectedCustomer ? (
+                  <div className="flex items-center justify-between bg-blue-50 border border-blue-200 p-2.5 rounded-xl">
                     <div>
-                      <p className="text-sm font-bold text-blue-900">
+                      <p className="text-xs font-bold text-blue-900">
                         {selectedCustomer.name}
                       </p>
-                      <p className="text-xs font-medium text-blue-700 mt-0.5">
+                      <p className="text-[10px] text-blue-600">
                         {selectedCustomer.phone}
                       </p>
                     </div>
                     <button
                       onClick={() => setSelectedCustomer(null)}
-                      className="p-1.5 text-blue-400 hover:text-rose-600 hover:bg-white rounded-md transition-colors shadow-sm border border-transparent hover:border-rose-100"
+                      className="text-xs text-blue-500 hover:text-rose-600 font-bold"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      Change
                     </button>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Type name or phone number..."
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    {isSearchingCustomer && (
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Searching...
+                      </span>
+                    )}
+
+                    {customerResults.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto">
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setSelectedCustomer(c);
+                              setCustomerResults([]);
+                              setCustomerSearch("");
+                            }}
+                            className="w-full text-left p-2.5 hover:bg-slate-50 border-b border-slate-50 text-xs flex justify-between"
+                          >
+                            <span className="font-bold text-slate-800">
+                              {c.name}
+                            </span>
+                            <span className="text-slate-400 font-mono">
+                              {c.phone}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
-
-            {/* Walk-in Udhaar Warning */}
-            {customerMode === "walk-in" &&
-              pendingAmount > 0 &&
-              cart.length > 0 && (
-                <div className="mt-3 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 p-2 rounded-lg flex items-start gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  Walk-in customers must pay in full.
-                </div>
-              )}
           </div>
 
-          {/* Cart Items */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
+          {/* Cart Items List */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+              <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-2">
                 <Receipt className="w-12 h-12 opacity-20" />
                 <p className="text-sm font-medium">Cart is empty</p>
               </div>
@@ -562,11 +798,11 @@ function CreateOrderPOSContent() {
                 </div>
               </div>
 
-              {/* 🟢 NEW: CONDITIONAL ORDER STATUS DROPDOWN */}
+              {/* DUAL-STATE ORDER STATUS SELECTOR */}
               {customerMode === "existing" && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Order Status
+                    Order Status (Dual State Logic)
                   </label>
                   <div className="relative">
                     <select
@@ -586,7 +822,11 @@ function CreateOrderPOSContent() {
                       </option>
                     </select>
                     <ChevronDown
-                      className={`w-4 h-4 absolute right-2.5 top-2.5 pointer-events-none ${orderStatus === "FINAL" ? "text-emerald-500" : "text-amber-500"}`}
+                      className={`w-4 h-4 absolute right-2.5 top-2.5 pointer-events-none ${
+                        orderStatus === "FINAL"
+                          ? "text-emerald-500"
+                          : "text-amber-500"
+                      }`}
                     />
                   </div>
                 </div>
@@ -604,9 +844,11 @@ function CreateOrderPOSContent() {
             >
               {isSubmitting
                 ? "Processing..."
-                : orderStatus === "FINAL"
-                  ? "Complete Order"
-                  : "Save Pending Order"}
+                : !isOnline
+                  ? `Queue ${orderStatus} Order Offline`
+                  : orderStatus === "FINAL"
+                    ? "Complete Order"
+                    : "Save Pending Order (MEMO)"}
               {!isSubmitting && <CheckCircle2 className="w-5 h-5" />}
             </button>
           </div>
