@@ -55,7 +55,7 @@ function CreateOrderPOSContent() {
   const [discount, setDiscount] = useState<number>(0);
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [orderStatus, setOrderStatus] = useState("COMPLETED");
+  const [orderStatus, setOrderStatus] = useState("FINAL");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
@@ -338,7 +338,7 @@ function CreateOrderPOSContent() {
         </div>
 
         {/* RIGHT SIDE: CART */}
-        <div className="w-full lg:w-[420px] flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 h-full">
+        <div className="w-full lg:w-105 flex flex-col bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 h-full">
           <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
             <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
               <button
@@ -573,20 +573,20 @@ function CreateOrderPOSContent() {
                       value={orderStatus}
                       onChange={(e) => setOrderStatus(e.target.value)}
                       className={`w-full pl-3 pr-8 py-2 border rounded-lg text-sm font-bold focus:ring-2 outline-none appearance-none cursor-pointer transition-colors ${
-                        orderStatus === "COMPLETED"
+                        orderStatus === "FINAL"
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700 focus:ring-emerald-500"
-                          : "bg-blue-50 border-blue-200 text-blue-700 focus:ring-blue-500"
+                          : "bg-amber-50 border-amber-200 text-amber-700 focus:ring-amber-500"
                       }`}
                     >
-                      <option value="COMPLETED">
-                        Completed (Handed to customer)
+                      <option value="FINAL">
+                        FINAL (Handed to customer, Posts to Ledger)
                       </option>
-                      <option value="PENDING">
-                        Pending (Delivery / Pickup later)
+                      <option value="MEMO">
+                        MEMO / AMANAT (Locks Physical Stock only)
                       </option>
                     </select>
                     <ChevronDown
-                      className={`w-4 h-4 absolute right-2.5 top-2.5 pointer-events-none ${orderStatus === "COMPLETED" ? "text-emerald-500" : "text-blue-500"}`}
+                      className={`w-4 h-4 absolute right-2.5 top-2.5 pointer-events-none ${orderStatus === "FINAL" ? "text-emerald-500" : "text-amber-500"}`}
                     />
                   </div>
                 </div>
@@ -604,7 +604,7 @@ function CreateOrderPOSContent() {
             >
               {isSubmitting
                 ? "Processing..."
-                : orderStatus === "COMPLETED"
+                : orderStatus === "FINAL"
                   ? "Complete Order"
                   : "Save Pending Order"}
               {!isSubmitting && <CheckCircle2 className="w-5 h-5" />}

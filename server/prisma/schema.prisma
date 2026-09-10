@@ -31,6 +31,9 @@ model Business {
   invitations Invitation[] 
   categories  Category[]   
   
+  cabinets       Cabinet[]
+  transactions   Transaction[]
+  
   createdAt   DateTime @default(now())
 }
 
@@ -85,6 +88,18 @@ model Customer {
   createdAt        DateTime @default(now())
 }
 
+model Cabinet {
+  id         String   @id @default(uuid())
+  name       String
+  location   String?  // e.g., Shop Location -> Rack -> Shelf -> Bin
+  
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  instances  ProductInstance[]
+  createdAt  DateTime @default(now())
+}
+
 model Product {
   id          String   @id @default(uuid())
   name        String
@@ -100,6 +115,23 @@ model Product {
   business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   
   orderItems  OrderItem[] 
+  instances   ProductInstance[]
+}
+
+model ProductInstance {
+  id           String        @id @default(uuid())
+  productId    String
+  cabinetId    String?
+  
+  condition    ItemCondition @default(ORIGINAL_PULL)
+  status       InstanceStatus @default(AVAILABLE) // For MEMO locks
+  serialNumber String?
+  
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cabinet      Cabinet?      @relation(fields: [cabinetId], references: [id])
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Category {
@@ -155,10 +187,48 @@ model Payment {
   createdAt  DateTime @default(now())
 }
 
+model Transaction {
+  id          String    @id @default(uuid())
+  businessId  String
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  referenceId String?
+  type        String
+  description String?
+  
+  postings    Posting[]
+  createdAt   DateTime  @default(now())
+}
+
+model Posting {
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  
+  accountId     String      // Could be Customer ID or Ledger Account ID
+  accountType   String      // e.g., CUSTOMER, CASH, REVENUE, INVENTORY
+  amount        Float       // Positive for debit, negative for credit
+  
+  createdAt     DateTime    @default(now())
+}
+
 enum OrderStatus {
-  PENDING
-  COMPLETED
+  MEMO
+  FINAL
   CANCELLED
+}
+
+enum ItemCondition {
+  ORIGINAL_PULL
+  COPY
+  MINOR_SCRATCHES
+  WORKING
+  DEAD_DONOR
+}
+
+enum InstanceStatus {
+  AVAILABLE
+  MEMO_LOCKED
+  SOLD
 }
 
 enum Role {

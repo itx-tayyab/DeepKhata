@@ -5,10 +5,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { LedgerService } from '../ledger/ledger.service';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ledgerService: LedgerService,
+  ) {}
 
   async newOrder(userId: string, data: any) {
     const {
@@ -17,7 +21,7 @@ export class OrdersService {
       discount = 0,
       amountPaid = 0,
       paymentMethod = 'CASH',
-      orderStatus = 'COMPLETED',
+      orderStatus = 'FINAL',
     } = data;
 
     if (!items || items.length === 0)
@@ -55,6 +59,7 @@ export class OrdersService {
         }
 
         const finalGrandTotal = calculatedTotal - parsedDiscount;
+        const udhaarRequested = finalGrandTotal - parsedAmountPaid;
 
         let calculatedPaymentStatus = 'UNPAID';
         if (parsedAmountPaid >= finalGrandTotal) {
@@ -63,78 +68,48 @@ export class OrdersService {
           calculatedPaymentStatus = 'PARTIAL';
         }
 
-        const udhaarRequested = finalGrandTotal - parsedAmountPaid;
-
-        if (udhaarRequested > 0) {
-          if (!customerId)
-            throw new Error(
-              'Walk-in customers must pay in full. Please select or create a customer profile to give Udhaar.',
-            );
-
-          const customer = await tx.customer.findUnique({
-            where: { id: customerId },
-          });
-          if (!customer)
-            throw new Error(
-              'Customer profile not found. Cannot process Udhaar.',
-            );
-          if (customer.isDefaulter)
-            throw new Error(
-              `SALE BLOCKED: ${customer.name} is marked as a Defaulter.`,
-            );
-          if (customer.creditLimit === 0)
-            throw new Error(
-              `SALE BLOCKED: ${customer.name} has a credit limit of Rs. 0.`,
-            );
-
-          const totalBilled = await tx.order.aggregate({
-            where: { customerId, status: { not: 'CANCELLED' } },
-            _sum: { totalAmount: true },
-          });
-
-          const totalPaid = await tx.payment.aggregate({
-            where: { order: { customerId, status: { not: 'CANCELLED' } } },
-            _sum: { amount: true },
-          });
-
-          const currentOutstanding =
-            (totalBilled._sum.totalAmount || 0) - (totalPaid._sum.amount || 0);
-          const projectedDebt = currentOutstanding + udhaarRequested;
-
-          if (projectedDebt > customer.creditLimit) {
-            const minimumCashRequired = projectedDebt - customer.creditLimit;
-            throw new Error(
-              `SALE BLOCKED: This exceeds ${customer.name}'s credit limit of Rs. ${customer.creditLimit.toLocaleString()}. You must collect at least Rs. ${minimumCashRequired.toLocaleString()} in cash right now to process this order.`,
-            );
-          }
+        if (udhaarRequested > 0 && !customerId) {
+          throw new Error(
+            'Walk-in customers must pay in full. Please select or create a customer profile to give Udhaar.',
+          );
         }
 
         const order = await tx.order.create({
           data: {
+            businessId,
             customerId: customerId || null,
-            businessId: businessId,
-            status: orderStatus,
+            totalAmount: finalGrandTotal,
             discount: parsedDiscount,
             paymentStatus: calculatedPaymentStatus as any,
-            totalAmount: finalGrandTotal,
+            status: orderStatus as any,
             createdBy: userId,
+            items: {
+              create: items.map((item: any) => ({
+                productId: item.productId,
+                quantity: item.quantity,
+                price: secureProducts[item.productId].price,
+              })),
+            },
           },
         });
 
         for (const item of items) {
-          await tx.orderItem.create({
-            data: {
-              orderId: order.id,
-              productId: item.productId,
-              quantity: item.quantity,
-              price: secureProducts[item.productId].price,
-            },
-          });
-
           await tx.product.update({
             where: { id: item.productId },
             data: { stock: { decrement: item.quantity } },
           });
+
+          const instances = await tx.productInstance.findMany({
+            where: { productId: item.productId, status: 'AVAILABLE' },
+            take: item.quantity,
+          });
+
+          if (instances.length > 0) {
+            await tx.productInstance.updateMany({
+              where: { id: { in: instances.map((i) => i.id) } },
+              data: { status: orderStatus === 'MEMO' ? 'MEMO_LOCKED' : 'SOLD' },
+            });
+          }
         }
 
         if (parsedAmountPaid > 0) {
@@ -151,6 +126,10 @@ export class OrdersService {
         return order;
       });
 
+      if (completeOrder.status === 'FINAL') {
+        await this.postDoubleEntrySequence(completeOrder, parsedAmountPaid);
+      }
+
       return {
         success: true,
         message: 'Order placed successfully',
@@ -165,6 +144,41 @@ export class OrdersService {
       }
       throw new BadRequestException(error.message || 'Failed to process order');
     }
+  }
+
+  private async postDoubleEntrySequence(order: any, amountPaid: number) {
+    const udhaarRequested = order.totalAmount - amountPaid;
+    const postings = [];
+
+    postings.push({
+      accountId: 'REVENUE',
+      accountType: 'REVENUE',
+      amount: -order.totalAmount,
+    });
+
+    if (amountPaid > 0) {
+      postings.push({
+        accountId: 'CASH',
+        accountType: 'ASSET',
+        amount: amountPaid,
+      });
+    }
+
+    if (udhaarRequested > 0 && order.customerId) {
+      postings.push({
+        accountId: order.customerId,
+        accountType: 'CUSTOMER_AR',
+        amount: udhaarRequested,
+      });
+    }
+
+    await this.ledgerService.createBalancedTransaction({
+      businessId: order.businessId,
+      referenceId: order.id,
+      type: 'SALE',
+      description: `Sale for Order ${order.id}`,
+      postings,
+    });
   }
 
   async getAllOrders(userId: string, query: any) {
@@ -258,21 +272,53 @@ export class OrdersService {
     });
 
     const order = await this.prisma.order.findFirst({
-      where: { id, businessId: currentUser.businessId },
+      where: { id, businessId: currentUser?.businessId },
+      include: { items: true, payments: true },
     });
 
     if (!order) throw new NotFoundException('Order not found');
 
-    if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
-      const orderItems = await this.prisma.orderItem.findMany({
-        where: { orderId: id },
-      });
+    if (order.status === 'MEMO' && status === 'FINAL') {
       await this.prisma.$transaction(async (tx) => {
-        for (const item of orderItems) {
+        for (const item of order.items) {
+          const instances = await tx.productInstance.findMany({
+            where: { productId: item.productId, status: 'MEMO_LOCKED' },
+            take: item.quantity,
+          });
+          if (instances.length > 0) {
+            await tx.productInstance.updateMany({
+              where: { id: { in: instances.map((i) => i.id) } },
+              data: { status: 'SOLD' },
+            });
+          }
+        }
+        await tx.order.update({
+          where: { id },
+          data: { status: status as any },
+        });
+      });
+      const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+      await this.postDoubleEntrySequence(order, totalPaid);
+    } else if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
+      await this.prisma.$transaction(async (tx) => {
+        for (const item of order.items) {
           await tx.product.update({
             where: { id: item.productId },
             data: { stock: { increment: item.quantity } },
           });
+
+          const instanceStatus =
+            order.status === 'MEMO' ? 'MEMO_LOCKED' : 'SOLD';
+          const instances = await tx.productInstance.findMany({
+            where: { productId: item.productId, status: instanceStatus },
+            take: item.quantity,
+          });
+          if (instances.length > 0) {
+            await tx.productInstance.updateMany({
+              where: { id: { in: instances.map((i) => i.id) } },
+              data: { status: 'AVAILABLE' },
+            });
+          }
         }
         await tx.order.update({
           where: { id },
@@ -344,6 +390,26 @@ export class OrdersService {
         where: { id: order.id },
         data: { paymentStatus: newPaymentStatus },
       });
+    });
+
+    // Also update ledger
+    await this.ledgerService.createBalancedTransaction({
+      businessId: currentUser.businessId,
+      referenceId: order.id,
+      type: 'PAYMENT',
+      description: `Payment for Order ${order.id}`,
+      postings: [
+        {
+          accountId: 'CASH',
+          accountType: 'ASSET',
+          amount: parsedAmount,
+        },
+        {
+          accountId: order.customerId || 'REVENUE', // assuming if walk-in, revenue was already credited, but here payment reduces AR
+          accountType: 'CUSTOMER_AR',
+          amount: -parsedAmount,
+        },
+      ],
     });
 
     return { success: true, message: 'Payment recorded successfully' };

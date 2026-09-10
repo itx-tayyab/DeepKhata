@@ -13,6 +13,8 @@ import { SettingsModule } from './settings/settings.module';
 import { TeamModule } from './team/team.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 
+import { LedgerModule } from './ledger/ledger.module';
+
 @Module({
   imports: [
     ThrottlerModule.forRoot([
@@ -31,6 +33,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
     ReportsModule,
     SettingsModule,
     TeamModule,
+    LedgerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
