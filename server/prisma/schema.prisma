@@ -215,6 +215,7 @@ enum OrderStatus {
   MEMO
   FINAL
   CANCELLED
+  RETURNED
 }
 
 enum ItemCondition {

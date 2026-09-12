@@ -23,9 +23,13 @@ import {
   HardDriveDownload,
   Layers,
   MapPin,
+  MessageCircle,
+  ArrowRight,
+  XCircle,
 } from "lucide-react";
 import { offlineDb, type SyncQueueItem, type LocalProduct } from "@/lib/db";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { generateWhatsAppReceipt } from "@/lib/utils";
 
 type Product = {
   id: string;
@@ -76,6 +80,9 @@ function CreateOrderPOSContent() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [offlineSuccessMsg, setOfflineSuccessMsg] = useState("");
+  const [completedOrderData, setCompletedOrderData] = useState<any | null>(
+    null,
+  );
 
   // ==========================================
   // 🟢 FETCH REAL CATEGORIES (Cached with offline fallback)
@@ -291,6 +298,12 @@ function CreateOrderPOSContent() {
     setIsSubmitting(true);
     setOfflineSuccessMsg("");
 
+    const currentCart = [...cart];
+    const currentCustomer = selectedCustomer;
+    const currentDiscount = Number(discount);
+    const currentPaid = Number(amountPaid);
+    const currentStatus = orderStatus;
+
     const payload = {
       customerId:
         customerMode === "walk-in" ? null : selectedCustomer?.id || null,
@@ -299,10 +312,10 @@ function CreateOrderPOSContent() {
         quantity: item.qty,
         price: item.price,
       })),
-      discount: Number(discount),
-      amountPaid: Number(amountPaid),
+      discount: currentDiscount,
+      amountPaid: currentPaid,
       paymentMethod,
-      orderStatus, // "MEMO" or "FINAL"
+      orderStatus: currentStatus, // "MEMO" or "FINAL"
     };
 
     // 🟢 1. OFFLINE INTERCEPTION
@@ -370,8 +383,38 @@ function CreateOrderPOSContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to create order");
 
-      alert("Order Successful!");
-      router.push(`/orders/${data.order.id}`);
+      const subtotal = currentCart.reduce((s, i) => s + i.price * i.qty, 0);
+      const totalAmount = Number(
+        data.order?.totalAmount ?? Math.max(0, subtotal - currentDiscount),
+      );
+      const orderBalance = Math.max(0, totalAmount - currentPaid);
+
+      setCompletedOrderData({
+        id: data.order?.id || "N/A",
+        orderNumber: `ORD-${data.order?.orderNumber || data.order?.id?.slice(0, 4) || "NEW"}`,
+        status: data.order?.status || currentStatus,
+        customer:
+          currentCustomer || data.order?.customer || { name: "Walk-in Customer" },
+        items: currentCart.map((c) => ({
+          name: c.name,
+          qty: c.qty,
+          price: c.price,
+          total: c.price * c.qty,
+        })),
+        financials: {
+          subtotal,
+          discount: currentDiscount,
+          total: totalAmount,
+          paid: currentPaid,
+          balance: orderBalance,
+        },
+        runningBalance: currentCustomer?.metrics?.outstandingBalance,
+        isOffline: false,
+      });
+
+      setCart([]);
+      setAmountPaid("");
+      setDiscount(0);
     } catch (error: any) {
       // Fallback: If network failed during fetch, queue in Dexie instead of crashing!
       const isNetworkIssue =
@@ -877,6 +920,132 @@ function CreateOrderPOSContent() {
           </div>
         </div>
       </div>
+
+      {/* 🟢 POS ORDER SUCCESS & WHATSAPP MODAL */}
+      {completedOrderData && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 bg-gradient-to-b from-emerald-50 to-white text-center border-b border-slate-100 relative">
+              <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 shadow-inner">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                {completedOrderData.isOffline
+                  ? "Order Queued Offline!"
+                  : "Sale Completed Successfully!"}
+              </h2>
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <span className="font-mono text-sm font-bold text-slate-700">
+                  {completedOrderData.orderNumber}
+                </span>
+                <span
+                  className={`text-xs font-extrabold px-2 py-0.5 rounded-md border ${
+                    completedOrderData.status === "MEMO"
+                      ? "bg-amber-100 text-amber-800 border-amber-300"
+                      : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                  }`}
+                >
+                  {completedOrderData.status === "MEMO"
+                    ? "MEMO (Amanat)"
+                    : "FINAL SALE"}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 text-sm">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Customer</span>
+                  <span className="font-bold text-slate-900">
+                    {completedOrderData.customer.name}{" "}
+                    {completedOrderData.customer.phone
+                      ? `(${completedOrderData.customer.phone})`
+                      : ""}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Items Purchased</span>
+                  <span className="font-semibold text-slate-800">
+                    {completedOrderData.items.reduce(
+                      (s: number, i: any) => s + i.qty,
+                      0,
+                    )}{" "}
+                    item(s)
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-slate-200 pt-2">
+                  <span className="text-slate-500">Net Total</span>
+                  <span className="font-black text-slate-900 text-base">
+                    Rs. {completedOrderData.financials.total.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Amount Paid</span>
+                  <span className="font-bold text-emerald-600">
+                    Rs. {completedOrderData.financials.paid.toLocaleString()}
+                  </span>
+                </div>
+                {completedOrderData.financials.balance > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-rose-600 font-semibold">
+                      Remaining Udhar
+                    </span>
+                    <span className="font-black text-rose-600">
+                      Rs.{" "}
+                      {completedOrderData.financials.balance.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {completedOrderData.isOffline && (
+                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-center font-medium">
+                  Saved securely in IndexedDB. Stock is reserved locally and
+                  will automatically synchronize when network is restored.
+                </p>
+              )}
+
+              {/* WhatsApp Receipt Action */}
+              <a
+                href={generateWhatsAppReceipt(
+                  completedOrderData,
+                  completedOrderData.customer,
+                  completedOrderData.runningBalance,
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl font-bold transition-colors shadow-md shadow-emerald-600/20"
+              >
+                <MessageCircle className="w-5 h-5" /> Share via WhatsApp
+              </a>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                {!completedOrderData.isOffline && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(`/orders/${completedOrderData.id}`)
+                    }
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+                  >
+                    <span>View Order</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setCompletedOrderData(null)}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-colors ${
+                    completedOrderData.isOffline ? "col-span-2" : ""
+                  }`}
+                >
+                  <Plus className="w-4 h-4" /> Next Sale
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

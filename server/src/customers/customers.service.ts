@@ -184,6 +184,39 @@ export class CustomersService {
 
     if (!customer) throw new NotFoundException('Customer not found.');
 
+    // Fetch chronological ledger postings for double-entry accuracy
+    const postings = await this.prisma.posting.findMany({
+      where: {
+        accountId: id,
+        transaction: { businessId: currentUser.businessId },
+      },
+      include: {
+        transaction: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let runningBalance = 0;
+    const ledger = postings.map((p) => {
+      const debit = p.amount > 0 ? p.amount : 0;
+      const credit = p.amount < 0 ? Math.abs(p.amount) : 0;
+      runningBalance += p.amount;
+
+      return {
+        id: p.id,
+        date: p.createdAt,
+        transactionId: p.transactionId,
+        referenceId: p.transaction.referenceId,
+        type: p.transaction.type,
+        description:
+          p.transaction.description ||
+          (p.amount > 0 ? 'Udhar (Sale)' : 'Payment Received'),
+        debit,
+        credit,
+        balance: runningBalance,
+      };
+    });
+
     let lifetimeSpend = 0;
     let totalOutstanding = 0;
     let validOrderCount = 0;
@@ -193,7 +226,7 @@ export class CustomersService {
       let orderPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
       let orderBalance = orderTotal - orderPaid;
 
-      if (order.status !== 'CANCELLED') {
+      if (order.status !== 'CANCELLED' && order.status !== 'RETURNED') {
         validOrderCount += 1;
         lifetimeSpend += orderTotal;
         totalOutstanding += orderBalance;
@@ -214,6 +247,13 @@ export class CustomersService {
       };
     });
 
+    const finalOutstandingBalance =
+      postings.length > 0
+        ? runningBalance
+        : totalOutstanding > 0
+          ? totalOutstanding
+          : 0;
+
     const formattedCustomer = {
       id: customer.id,
       name: customer.name,
@@ -231,11 +271,71 @@ export class CustomersService {
       metrics: {
         totalOrders: validOrderCount,
         lifetimeValue: lifetimeSpend,
-        outstandingBalance: totalOutstanding > 0 ? totalOutstanding : 0,
+        outstandingBalance: finalOutstandingBalance,
+        ledgerBalance: runningBalance,
       },
       orderHistory,
+      ledger,
     };
 
     return { success: true, customer: formattedCustomer };
+  }
+
+  async getCustomerLedger(userId: string, id: string) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+
+    if (!currentUser?.businessId)
+      throw new BadRequestException('No business found.');
+
+    const customer = await this.prisma.customer.findFirst({
+      where: { id, businessId: currentUser.businessId },
+    });
+
+    if (!customer) throw new NotFoundException('Customer not found.');
+
+    const postings = await this.prisma.posting.findMany({
+      where: {
+        accountId: id,
+        transaction: { businessId: currentUser.businessId },
+      },
+      include: {
+        transaction: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let runningBalance = 0;
+    const ledger = postings.map((p) => {
+      const debit = p.amount > 0 ? p.amount : 0;
+      const credit = p.amount < 0 ? Math.abs(p.amount) : 0;
+      runningBalance += p.amount;
+
+      return {
+        id: p.id,
+        date: p.createdAt,
+        transactionId: p.transactionId,
+        referenceId: p.transaction.referenceId,
+        type: p.transaction.type,
+        description:
+          p.transaction.description ||
+          (p.amount > 0 ? 'Udhar (Sale)' : 'Payment Received'),
+        debit,
+        credit,
+        balance: runningBalance,
+      };
+    });
+
+    return {
+      success: true,
+      customerId: id,
+      customerName: customer.name,
+      totalDebit: ledger.reduce((sum, item) => sum + item.debit, 0),
+      totalCredit: ledger.reduce((sum, item) => sum + item.credit, 0),
+      currentBalance: runningBalance,
+      ledger,
+    };
   }
 }

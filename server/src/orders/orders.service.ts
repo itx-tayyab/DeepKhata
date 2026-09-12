@@ -266,6 +266,8 @@ export class OrdersService {
   async updateOrderStatus(userId: string, id: string, data: any) {
     const { status } = data;
     if (!status) throw new BadRequestException('Status is required');
+    const { amountPaid, paymentMethod = 'CASH' } = data;
+    const parsedAmountPaid = Number(amountPaid) || 0;
 
     const currentUser = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -280,6 +282,15 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     if (order.status === 'MEMO' && status === 'FINAL') {
+      const existingPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+      const totalPaid = existingPaid + parsedAmountPaid;
+      const newPaymentStatus =
+        totalPaid >= order.totalAmount
+          ? 'PAID'
+          : totalPaid > 0
+            ? 'PARTIAL'
+            : 'UNPAID';
+
       await this.prisma.$transaction(async (tx) => {
         for (const item of order.items) {
           const instances = await tx.productInstance.findMany({
@@ -293,13 +304,52 @@ export class OrdersService {
             });
           }
         }
+
+        if (parsedAmountPaid > 0) {
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              amount: parsedAmountPaid,
+              method: paymentMethod as any,
+              receivedBy: userId,
+            },
+          });
+        }
+
         await tx.order.update({
           where: { id },
-          data: { status: status as any },
+          data: {
+            status: 'FINAL',
+            paymentStatus: newPaymentStatus as any,
+          },
         });
       });
-      const totalPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+
       await this.postDoubleEntrySequence(order, totalPaid);
+    } else if (status === 'RETURNED' && order.status === 'MEMO') {
+      await this.prisma.$transaction(async (tx) => {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+
+          const instances = await tx.productInstance.findMany({
+            where: { productId: item.productId, status: 'MEMO_LOCKED' },
+            take: item.quantity,
+          });
+          if (instances.length > 0) {
+            await tx.productInstance.updateMany({
+              where: { id: { in: instances.map((i) => i.id) } },
+              data: { status: 'AVAILABLE' },
+            });
+          }
+        }
+        await tx.order.update({
+          where: { id },
+          data: { status: 'RETURNED' as any },
+        });
+      });
     } else if (status === 'CANCELLED' && order.status !== 'CANCELLED') {
       await this.prisma.$transaction(async (tx) => {
         for (const item of order.items) {

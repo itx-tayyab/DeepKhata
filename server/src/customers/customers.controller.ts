@@ -53,6 +53,12 @@ export class CustomersController {
     return this.customersService.getAllCustomers(req.user.id, query);
   }
 
+  @Get(':id/ledger')
+  @RequirePermissions('read:customers')
+  async getCustomerLedger(@Req() req: any, @Param('id') id: string) {
+    return this.customersService.getCustomerLedger(req.user.id, id);
+  }
+
   @Get(':id')
   @RequirePermissions('read:customers')
   async getCustomerById(@Req() req: any, @Param('id') id: string) {
