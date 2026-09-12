@@ -260,4 +260,26 @@ export class ProductsService {
 
     return { success: true, products };
   }
+
+  async updatePrice(userId: string, productId: string, price: number) {
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+    if (!currentUser?.businessId) {
+      throw new BadRequestException('No business found.');
+    }
+
+    if (price < 0) {
+      throw new BadRequestException('Price cannot be negative');
+    }
+
+    const product = await this.prisma.product.update({
+      where: { id: productId, businessId: currentUser.businessId },
+      data: { price },
+    });
+
+    return { success: true, product };
+  }
 }
+

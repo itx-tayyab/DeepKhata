@@ -282,50 +282,7 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
 
     if (order.status === 'MEMO' && status === 'FINAL') {
-      const existingPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
-      const totalPaid = existingPaid + parsedAmountPaid;
-      const newPaymentStatus =
-        totalPaid >= order.totalAmount
-          ? 'PAID'
-          : totalPaid > 0
-            ? 'PARTIAL'
-            : 'UNPAID';
-
-      await this.prisma.$transaction(async (tx) => {
-        for (const item of order.items) {
-          const instances = await tx.productInstance.findMany({
-            where: { productId: item.productId, status: 'MEMO_LOCKED' },
-            take: item.quantity,
-          });
-          if (instances.length > 0) {
-            await tx.productInstance.updateMany({
-              where: { id: { in: instances.map((i) => i.id) } },
-              data: { status: 'SOLD' },
-            });
-          }
-        }
-
-        if (parsedAmountPaid > 0) {
-          await tx.payment.create({
-            data: {
-              orderId: order.id,
-              amount: parsedAmountPaid,
-              method: paymentMethod as any,
-              receivedBy: userId,
-            },
-          });
-        }
-
-        await tx.order.update({
-          where: { id },
-          data: {
-            status: 'FINAL',
-            paymentStatus: newPaymentStatus as any,
-          },
-        });
-      });
-
-      await this.postDoubleEntrySequence(order, totalPaid);
+      throw new BadRequestException('To convert a MEMO to FINAL, use the settle-memo endpoint');
     } else if (status === 'RETURNED' && order.status === 'MEMO') {
       await this.prisma.$transaction(async (tx) => {
         for (const item of order.items) {
@@ -384,6 +341,74 @@ export class OrdersService {
     }
 
     return { success: true, message: `Order status updated to ${status}` };
+  }
+
+  async settleMemo(userId: string, id: string, data: any) {
+    const { amountPaid, paymentMethod = 'CASH' } = data;
+    const parsedAmountPaid = Number(amountPaid) || 0;
+
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+
+    const order = await this.prisma.order.findFirst({
+      where: { id, businessId: currentUser?.businessId },
+      include: { items: true, payments: true },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status !== 'MEMO') {
+      throw new BadRequestException('Order is not in MEMO status');
+    }
+
+    const existingPaid = order.payments.reduce((sum, p) => sum + p.amount, 0);
+    const totalPaid = existingPaid + parsedAmountPaid;
+    const newPaymentStatus =
+      totalPaid >= order.totalAmount
+        ? 'PAID'
+        : totalPaid > 0
+          ? 'PARTIAL'
+          : 'UNPAID';
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of order.items) {
+        const instances = await tx.productInstance.findMany({
+          where: { productId: item.productId, status: 'MEMO_LOCKED' },
+          take: item.quantity,
+        });
+        if (instances.length > 0) {
+          await tx.productInstance.updateMany({
+            where: { id: { in: instances.map((i) => i.id) } },
+            data: { status: 'SOLD' },
+          });
+        }
+      }
+
+      if (parsedAmountPaid > 0) {
+        await tx.payment.create({
+          data: {
+            orderId: order.id,
+            amount: parsedAmountPaid,
+            method: paymentMethod as any,
+            receivedBy: userId,
+          },
+        });
+      }
+
+      await tx.order.update({
+        where: { id },
+        data: {
+          status: 'FINAL',
+          paymentStatus: newPaymentStatus as any,
+        },
+      });
+    });
+
+    await this.postDoubleEntrySequence(order, totalPaid);
+    
+    return { success: true, message: 'Memo converted to final sale successfully' };
   }
 
   async recordPayment(userId: string, data: any) {

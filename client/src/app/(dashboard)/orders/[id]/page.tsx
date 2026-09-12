@@ -245,11 +245,10 @@ export default function OrderDetailsLedger() {
   const handleConvertToFinalSale = async () => {
     setIsSubmittingStatus(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/order/${id}/status`, {
+      const response = await fetch(`${API_BASE_URL}/order/${id}/settle-memo`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          status: "FINAL",
           amountPaid: Number(convertAmountPaid) || 0,
           paymentMethod: convertPaymentMethod,
         }),

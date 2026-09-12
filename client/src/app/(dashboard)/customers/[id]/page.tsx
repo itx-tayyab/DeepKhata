@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import EditCustomerModal from "@/components/modals/EditCustomerModal";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -233,6 +235,70 @@ export default function CustomerProfilePage() {
     }
   };
 
+  const generatePDF = () => {
+    if (!customer) return;
+
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(20);
+    doc.text("Customer Ledger Statement", 14, 22);
+
+    doc.setFontSize(12);
+    doc.text(`Customer: ${customer.name}`, 14, 32);
+    doc.text(`Phone: ${customer.phone}`, 14, 38);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 44);
+
+    // Ledger Data
+    const tableColumn = [
+      "Date",
+      "Type",
+      "Description",
+      "Debit (Udhar)",
+      "Credit (Wasool)",
+      "Balance",
+    ];
+    const tableRows: any[] = [];
+
+    if (customer.ledger && customer.ledger.length > 0) {
+      customer.ledger.forEach((item: any) => {
+        const date = item.formattedDate;
+        const type = item.type;
+        const desc = item.description;
+        const debit =
+          item.debit > 0 ? `Rs. ${item.debit.toLocaleString()}` : "-";
+        const credit =
+          item.credit > 0 ? `Rs. ${item.credit.toLocaleString()}` : "-";
+        const balance = `Rs. ${item.balance.toLocaleString()}`;
+        tableRows.push([date, type, desc, debit, credit, balance]);
+      });
+    }
+
+    autoTable(doc, {
+      startY: 50,
+      head: [tableColumn],
+      body: tableRows,
+      theme: "grid",
+      headStyles: { fillColor: [51, 122, 183] }, // Blueish color
+    });
+
+    const finalBalance =
+      customer.ledger && customer.ledger.length > 0
+        ? customer.ledger[customer.ledger.length - 1].balance
+        : customer.metrics?.outstandingBalance || 0;
+
+    const finalY = (doc as any).lastAutoTable.finalY || 50;
+    doc.text(
+      `Final Outstanding Balance: Rs. ${finalBalance.toLocaleString()}`,
+      14,
+      finalY + 10,
+    );
+
+    doc.save(
+      `Statement_${customer.name}_${new Date().toISOString().split("T")[0]}.pdf`,
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-slate-500">
@@ -301,6 +367,12 @@ export default function CustomerProfilePage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={generatePDF}
+            className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-700 bg-white rounded-xl text-sm font-semibold hover:bg-slate-50 transition-colors shadow-sm"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Download Statement
+          </button>
           <a
             href={`https://wa.me/${formatPakistaniPhone(customer.phone)}?text=${encodeURIComponent(
               `Assalam-o-Alaikum ${customer.name},\n\n*DeepKhata Account Statement*\n--------------------------------\n• Current Udhar Balance (Baqaya): Rs. ${(customer.metrics?.outstandingBalance || 0).toLocaleString()}\n• Credit Limit: Rs. ${(customer.creditLimit || 0).toLocaleString()}\n• Total Orders: ${customer.metrics?.totalOrders || 0}\n--------------------------------\nThank you for your business!\nDeepKhata / BizFlow`,

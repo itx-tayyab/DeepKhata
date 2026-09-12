@@ -13,7 +13,9 @@ import {
 import { TeamService } from './team.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('team')
@@ -86,14 +88,16 @@ export class TeamController {
   }
 
   @Delete('removemember')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
   @RequirePermissions('manage:team')
   async removeMemberTeam(@Req() req: any, @Body() body: any) {
     return this.teamService.removeMember(req.user.id, body);
   }
 
   @Delete('remove')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
   @RequirePermissions('manage:team')
   async removeMember(@Req() req: any, @Body() body: any) {
     return this.teamService.removeMember(req.user.id, body);
@@ -114,14 +118,16 @@ export class TeamController {
   }
 
   @Delete('cancelinvite')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
   @RequirePermissions('manage:team')
   async cancelInviteTeam(@Req() req: any, @Body() body: any) {
     return this.teamService.cancelInvite(req.user.id, body);
   }
 
   @Delete('cancel-invite')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
   @RequirePermissions('manage:team')
   async cancelInvite(@Req() req: any, @Body() body: any) {
     return this.teamService.cancelInvite(req.user.id, body);

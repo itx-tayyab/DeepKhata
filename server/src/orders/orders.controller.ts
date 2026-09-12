@@ -14,6 +14,8 @@ import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('order')
@@ -62,6 +64,18 @@ export class OrdersController {
     @Body() body: any,
   ) {
     return this.ordersService.updateOrderStatus(req.user.id, id, body);
+  }
+
+  @Patch(':id/settle-memo')
+  @UseGuards(JwtAuthGuard, PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
+  @RequirePermissions('update:order')
+  async settleMemo(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.ordersService.settleMemo(req.user.id, id, body);
   }
 
   @Post('recordpayment')

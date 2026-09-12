@@ -6,11 +6,15 @@ import {
   Query,
   UseGuards,
   Req,
+  Patch,
+  Param,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 @Controller('product')
@@ -54,5 +58,17 @@ export class ProductsController {
   @RequirePermissions('write:products')
   async addCabinet(@Req() req: any, @Body() body: any) {
     return this.productsService.addCabinet(req.user.id, body);
+  }
+
+  @Patch('updateprice/:id')
+  @UseGuards(PermissionsGuard, RolesGuard)
+  @Roles('OWNER')
+  @RequirePermissions('write:products')
+  async updatePrice(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body('price') price: number,
+  ) {
+    return this.productsService.updatePrice(req.user.id, id, price);
   }
 }
