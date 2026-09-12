@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from "lucide-react";
+import { offlineDb } from "@/lib/db";
 
 type CustomerRow = {
   id: string;
@@ -108,7 +109,11 @@ function CustomersPageContent() {
         );
       }
 
-      setCustomers(data?.customers || []);
+      const customerList = data?.customers || [];
+      setCustomers(customerList);
+      if (Array.isArray(customerList) && customerList.length > 0) {
+        void offlineDb.customers.bulkPut(customerList);
+      }
     } catch (error) {
       setPageError(
         error instanceof Error ? error.message : "Failed to load customers",

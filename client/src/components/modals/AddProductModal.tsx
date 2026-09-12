@@ -348,10 +348,36 @@ export default function AddProductModal({
 
           {/* Section 3: Item Condition Profiling */}
           <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-amber-500" />
-              Item Condition Profiling *
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-amber-500" />
+                Item Condition Profiling *
+              </h3>
+            </div>
+
+            <div>
+              <label
+                htmlFor="condition-select"
+                className="block text-xs font-semibold text-slate-600 mb-1.5"
+              >
+                Condition Select Dropdown
+              </label>
+              <select
+                id="condition-select"
+                name="condition"
+                value={condition}
+                onChange={(e) =>
+                  setCondition(e.target.value as ItemConditionType)
+                }
+                className="w-full border border-slate-300 rounded-xl py-2 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white cursor-pointer"
+              >
+                {CONDITION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.value} ({opt.label})
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {CONDITION_OPTIONS.map((opt) => {

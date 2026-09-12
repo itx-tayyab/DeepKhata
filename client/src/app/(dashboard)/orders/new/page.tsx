@@ -179,6 +179,29 @@ function CreateOrderPOSContent() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, activeCategory]);
 
+  // Pre-fetch all customers into IndexedDB for offline capability
+  useEffect(() => {
+    const prefetchCustomers = async () => {
+      try {
+        if (typeof navigator !== "undefined" && !navigator.onLine) return;
+        const token = localStorage.getItem("accessToken");
+        const res = await fetch(
+          "http://localhost:5000/customer/getallcustomers",
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          },
+        );
+        const data = await res.json();
+        if (data.success && Array.isArray(data.customers)) {
+          void offlineDb.customers.bulkPut(data.customers);
+        }
+      } catch (err) {
+        console.warn("Failed to prefetch customers for offline cache:", err);
+      }
+    };
+    void prefetchCustomers();
+  }, []);
+
   // ==========================================
   // 🟢 FETCH & CACHE CUSTOMERS IN DEXIE INDEXEDDB
   // ==========================================
