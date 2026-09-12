@@ -38,7 +38,9 @@ export default function ReportsPage() {
   if (!hasPermission("read:reports")) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 text-center">
-        <p className="text-lg font-semibold text-slate-700">403 Forbidden: You do not have access to Analytics.</p>
+        <p className="text-lg font-semibold text-slate-700">
+          403 Forbidden: You do not have access to Analytics.
+        </p>
         <button
           onClick={() => router.push("/dashboard")}
           className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
@@ -51,7 +53,6 @@ export default function ReportsPage() {
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500 pb-20 mt-2">
-      
       {/* 🟢 HEADER & EXPORT ACTIONS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -59,12 +60,14 @@ export default function ReportsPage() {
             <BarChart3 className="w-6 h-6 text-blue-600" />
             Reports & Analytics
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Track your revenue, profit margins, and business growth.</p>
+          <p className="text-sm text-slate-500 mt-1">
+            Track your revenue, profit margins, and business growth.
+          </p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <div className="relative">
-            <select 
+            <select
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
               className="appearance-none pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-sm cursor-pointer"
@@ -76,7 +79,7 @@ export default function ReportsPage() {
             </select>
             <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
           </div>
-          
+
           <button className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm">
             <Download className="w-4 h-4" /> Export
           </button>
@@ -93,7 +96,6 @@ export default function ReportsPage() {
         {activeTab === "staff" && <StaffPerformanceTab />}
         {activeTab === "customers" && <CustomerInsightsTab />}
       </div>
-
     </div>
   );
 }

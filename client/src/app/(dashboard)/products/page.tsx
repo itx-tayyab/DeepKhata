@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Search,
   Package,
@@ -89,7 +89,6 @@ const normalizeProduct = (product: ProductRecord): ProductRow => {
 };
 
 function ProductsPageContent() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { hasPermission } = usePermissions();
@@ -97,6 +96,7 @@ function ProductsPageContent() {
   const [searchQuery, setSearchQuery] = useState(
     searchParams.get("search") || "",
   );
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
   const [activeCategory, setActiveCategory] = useState(
     searchParams.get("category") || "All",
   );
@@ -114,6 +114,15 @@ function ProductsPageContent() {
   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
 
   const [newCategoryName, setNewCategoryName] = useState("");
+
+  // Debounce search query to prevent spamming the backend
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -137,7 +146,7 @@ function ProductsPageContent() {
     try {
       const params = new URLSearchParams();
 
-      if (searchQuery) params.set("search", searchQuery);
+      if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
       if (activeCategory !== "All") params.set("category", activeCategory);
       if (stockFilter !== "all") params.set("stock", stockFilter);
 
@@ -168,7 +177,7 @@ function ProductsPageContent() {
     } finally {
       setIsLoadingProducts(false);
     }
-  }, [searchQuery, activeCategory, stockFilter]);
+  }, [debouncedSearchQuery, activeCategory, stockFilter]);
 
   const handleAddProduct = async (newProduct: ProductFormValues) => {
     const response = await fetch(`${API_BASE_URL}/product/addproduct`, {
@@ -209,30 +218,26 @@ function ProductsPageContent() {
     setNewCategoryName("");
   };
 
+  // Synchronize search query and filter with URL params
   useEffect(() => {
-    // Create a new URL parameter object
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams();
 
-    // Update or delete Search
-    if (searchQuery) params.set("search", searchQuery);
-    else params.delete("search");
-
-    // Update or delete Category
+    if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
     if (activeCategory !== "All") params.set("category", activeCategory);
-    else params.delete("category");
-
-    // Update or delete Stock Filter
     if (stockFilter !== "all") params.set("stock", stockFilter);
-    else params.delete("stock");
 
-    // Push the new URL to the browser WITHOUT reloading the page
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    const currentQuery = searchParams.toString();
+    const newQuery = params.toString();
+
+    if (currentQuery !== newQuery) {
+      const newUrl = newQuery ? `${pathname}?${newQuery}` : pathname;
+      window.history.replaceState(null, "", newUrl);
+    }
   }, [
-    searchQuery,
+    debouncedSearchQuery,
     activeCategory,
     stockFilter,
     pathname,
-    router,
     searchParams,
   ]);
 
@@ -241,11 +246,7 @@ function ProductsPageContent() {
   }, [fetchCategories]);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void refreshProducts();
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
+    void refreshProducts();
   }, [refreshProducts]);
 
   const deleteProduct = (id: string) => {

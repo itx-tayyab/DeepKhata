@@ -69,16 +69,19 @@ function CustomersPageContent() {
 
   // Synchronize search query and filter with URL params
   useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams();
 
-    if (searchQuery) params.set("search", searchQuery);
-    else params.delete("search");
-
+    if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
     if (showUnpaidOnly) params.set("unpaid", "true");
-    else params.delete("unpaid");
 
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [searchQuery, showUnpaidOnly, pathname, router, searchParams]);
+    const currentQuery = searchParams.toString();
+    const newQuery = params.toString();
+
+    if (currentQuery !== newQuery) {
+      const newUrl = newQuery ? `${pathname}?${newQuery}` : pathname;
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, [debouncedSearchQuery, showUnpaidOnly, pathname, searchParams]);
 
   // Fetch customers from backend
   const refreshCustomers = useCallback(async () => {
@@ -118,11 +121,7 @@ function CustomersPageContent() {
 
   // Fetch customers on load and when dependencies change
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void refreshCustomers();
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
+    void refreshCustomers();
   }, [refreshCustomers]);
 
   // --- ACTIONS ---
